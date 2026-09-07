@@ -1,0 +1,142 @@
+# =========================================================
+# FreshersCompass — Root .gitignore (monorepo)
+# Covers: frontend (React/Vite), backend (Node/Express),
+# ai-service (Python/FastAPI)
+# =========================================================
+
+# ---------------------------------------------------------
+# Node / React (frontend, backend)
+# ---------------------------------------------------------
+node_modules/
+**/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.turbo/
+backend/dist/
+backend/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnp/
+.pnp.js
+.npm/
+.yarn/
+package-lock.json.bak
+
+# ---------------------------------------------------------
+# Python (ai-service)
+# ---------------------------------------------------------
+ai-service/__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+ai-service/.Python
+ai-service/venv/
+ai-service/env/
+ai-service/.venv/
+ai-service/ENV/
+ai-service/*.egg-info/
+ai-service/.eggs/
+ai-service/.pytest_cache/
+ai-service/.mypy_cache/
+ai-service/.ruff_cache/
+ai-service/instance/
+ai-service/.installed.cfg
+ai-service/*.egg
+
+# ---------------------------------------------------------
+# Environment variables (NEVER commit real secrets)
+# ---------------------------------------------------------
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+frontend/.env
+frontend/.env.local
+backend/.env
+backend/.env.local
+ai-service/.env
+ai-service/.env.local
+# Keep the example templates tracked
+!.env.example
+!frontend/.env.example
+!backend/.env.example
+!ai-service/.env.example
+
+# ---------------------------------------------------------
+# Logs
+# ---------------------------------------------------------
+logs/
+*.log
+backend/logs/
+ai-service/logs/
+
+# ---------------------------------------------------------
+# Uploaded files (resumes, generated portfolios, temp data)
+# ---------------------------------------------------------
+backend/uploads/
+backend/tmp/
+ai-service/tmp/
+ai-service/vector_store_data/
+
+# ---------------------------------------------------------
+# OS files
+# ---------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ---------------------------------------------------------
+# IDE / Editor
+# ---------------------------------------------------------
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# ---------------------------------------------------------
+# Build / Deployment
+# ---------------------------------------------------------
+.vercel/
+.render/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ---------------------------------------------------------
+# Testing / Coverage
+# ---------------------------------------------------------
+coverage/
+.nyc_output/
+htmlcov/
+.coverage
+.coverage.*
+.tox/
+
+# ---------------------------------------------------------
+# Docker (if used later)
+# ---------------------------------------------------------
+*.pid
+docker-compose.override.yml
+
+# ---------------------------------------------------------
+# Misc
+# ---------------------------------------------------------
+*.tmp
+*.bak
+*.orig
+.cache/
+.eslintcache
+.stylelintcache
