@@ -2,8 +2,6 @@
 
 AI-powered career and code intelligence platform for students, fresh graduates, and early-career developers — unifying resume analysis, GitHub/codebase intelligence, AI-driven interview practice, job matching, and skill-gap-driven learning roadmaps in one place.
 
-> Academic project name on record: **DevGenesis** (BIT Mesra, Jaipur Campus). FreshersCompass is the product/repo name used going forward.
-
 ---
 
 ## Table of Contents
