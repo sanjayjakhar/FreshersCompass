@@ -26,12 +26,13 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "freshercompass-backend" });
 });
 
-// ---------- Routes (to be added) ----------
-// import authRoutes from "./routes/auth.routes.js";
-// import resumeRoutes from "./routes/resume.routes.js";
+// ---------- Routes ----------
+import authRoutes from "./routes/auth.routes.js";
+import resumeRoutes from "./routes/resume.routes.js";
 // import applicationRoutes from "./routes/application.routes.js";
-// app.use("/api/auth", authRoutes);
-// app.use("/api/resume", resumeRoutes);
+
+app.use("/api/auth", authRoutes);
+app.use("/api/resume", resumeRoutes);
 // app.use("/api/applications", applicationRoutes);
 
 // ---------- Database connection ----------

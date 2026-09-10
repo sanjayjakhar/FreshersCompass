@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-surface text-text-primary antialiased font-sans;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Better selection colors */
+  ::selection {
+    @apply bg-primary/20 text-primary-dark;
+  }
+}
+
+@layer components {
+  /* Glassmorphism card */
+  .glass {
+    @apply bg-surface/80 backdrop-blur-md border border-border shadow-md;
+  }
+
+  /* Premium card with subtle glow */
+  .card-premium {
+    @apply bg-surface border border-border rounded-2xl shadow-sm
+           transition-all duration-300 ease-out
+           hover:shadow-lg hover:shadow-primary/5 hover:border-primary/20;
+  }
+
+  /* Gradient text utility */
+  .text-gradient {
+    @apply text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-primary;
+    background-size: 200% auto;
+  }
+
+  /* Animated gradient border */
+  .border-gradient {
+    position: relative;
+    background: white;
+    border-radius: 1rem;
+  }
+  .border-gradient::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 1rem;
+    padding: 1px;
+    background: linear-gradient(135deg, #185FA5, #0F6E56, #D85A30);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* Pill badge */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .badge-primary {
+    @apply bg-primary/10 text-primary-dark;
+  }
+  .badge-secondary {
+    @apply bg-secondary/10 text-secondary-dark;
+  }
+  .badge-accent {
+    @apply bg-accent/10 text-accent-dark;
+  }
+
+  /* Animated progress ring */
+  .progress-ring {
+    transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-origin: center;
+  }
+}
+
+@layer utilities {
+  /* Fade-in from bottom */
+  .animate-fade-up {
+    animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Stagger children */
+  .stagger-1 { animation-delay: 0.1s; }
+  .stagger-2 { animation-delay: 0.2s; }
+  .stagger-3 { animation-delay: 0.3s; }
+  .stagger-4 { animation-delay: 0.4s; }
+  .stagger-5 { animation-delay: 0.5s; }
+
+  /* Pulse glow */
+  .animate-pulse-glow {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+
+  /* Shimmer loading effect */
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      #F1EFE8 25%,
+      #e8e6df 50%,
+      #F1EFE8 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* Scale bounce on hover */
+  .hover-lift {
+    @apply transition-all duration-300;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(24, 95, 165, 0.12);
+  }
+
+  /* Animation delay utilities */
+  .animation-delay-2000 { animation-delay: 2s; }
+  .animation-delay-4000 { animation-delay: 4s; }
+}
+
+/* ---- Keyframes ---- */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(24, 95, 165, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px 4px rgba(24, 95, 165, 0.15);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Dropzone visual feedback */
+.dropzone-active {
+  border-color: #185FA5 !important;
+  background-color: rgba(24, 95, 165, 0.05) !important;
+  box-shadow: 0 0 0 4px rgba(24, 95, 165, 0.1);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E5E4DF;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #888780;
+}
+
+/* Score counter animation */
+@keyframes countUp {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-count-up {
+  animation: countUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}

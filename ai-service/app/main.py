@@ -22,8 +22,9 @@ def health_check():
 
 
 # ---------- Routers (to be added) ----------
-# from app.routers import resume, interview, github_rag, jobs, skill_gap
-# app.include_router(resume.router, prefix="/resume", tags=["Resume & ATS"])
+from app.routers import resume
+# , interview, github_rag, jobs, skill_gap
+app.include_router(resume.router, prefix="/resume", tags=["Resume & ATS"])
 # app.include_router(interview.router, prefix="/interview", tags=["AI Interview Simulator"])
 # app.include_router(github_rag.router, prefix="/github", tags=["GitHub & Codebase RAG"])
 # app.include_router(jobs.router, prefix="/jobs", tags=["Job Recommendation"])
