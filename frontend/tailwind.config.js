@@ -7,56 +7,56 @@ export default {
   theme: {
     extend: {
       colors: {
-        // ---- Primary (Blue) — headings, nav, links, primary buttons ----
+        // ---- Primary (Modern Royal Blue) — headings, nav, links, primary buttons ----
         primary: {
-          DEFAULT: "#185FA5",
-          light: "#378ADD",
-          dark: "#0C447C",
+          DEFAULT: "#2563EB",
+          light: "#3B82F6",
+          dark: "#1D4ED8",
         },
-        // ---- Secondary (Teal) — progress bars, growth/skill indicators ----
+        // ---- Secondary (Fresh Emerald) — progress, tags, verified indicators ----
         secondary: {
-          DEFAULT: "#0F6E56",
-          light: "#1D9E75",
-          dark: "#085041",
+          DEFAULT: "#059669",
+          light: "#10B981",
+          dark: "#047857",
         },
-        // ---- Accent (Coral) — main CTA buttons only ----
+        // ---- Accent (Vibrant Violet / Coral) — badges & highlights ----
         accent: {
-          DEFAULT: "#D85A30",
-          light: "#F0997B",
-          dark: "#993C1D",
+          DEFAULT: "#7C3AED",
+          light: "#8B5CF6",
+          dark: "#6D28D9",
         },
         // ---- Semantic colors ----
         success: {
-          DEFAULT: "#639922",
-          light: "#97C459",
-          dark: "#3B6D11",
+          DEFAULT: "#10B981",
+          light: "#34D399",
+          dark: "#059669",
         },
         warning: {
-          DEFAULT: "#EF9F27",
-          light: "#FAC775",
-          dark: "#854F0B",
+          DEFAULT: "#F59E0B",
+          light: "#FBBF24",
+          dark: "#D97706",
         },
         danger: {
-          DEFAULT: "#E24B4A",
-          light: "#F09595",
-          dark: "#A32D2D",
+          DEFAULT: "#EF4444",
+          light: "#F87171",
+          dark: "#DC2626",
         },
-        // ---- Neutrals ----
+        // ---- Neutrals (Clean Slate & Pure White) ----
         surface: {
           DEFAULT: "#FFFFFF",
-          muted: "#F1EFE8",
+          muted: "#F8FAFC",
         },
         border: {
-          DEFAULT: "#E5E4DF",
+          DEFAULT: "#E2E8F0",
         },
         text: {
-          primary: "#2C2C2A",
-          secondary: "#5F5E5A",
-          muted: "#888780",
+          primary: "#0F172A",
+          secondary: "#475569",
+          muted: "#94A3B8",
         },
       },
       borderRadius: {
-        card: "12px",
+        card: "16px",
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],

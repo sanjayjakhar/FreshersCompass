@@ -21,7 +21,7 @@ def init_gemini():
 def parse_resume_with_gemini(raw_text: str) -> dict:
     init_gemini()
     
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     model = genai.GenerativeModel(model_name)
     
     prompt = f"""

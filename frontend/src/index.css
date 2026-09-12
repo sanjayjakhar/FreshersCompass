@@ -21,19 +21,43 @@
 @layer components {
   /* Glassmorphism card */
   .glass {
-    @apply bg-surface/80 backdrop-blur-md border border-border shadow-md;
+    @apply bg-surface/85 backdrop-blur-xl border border-slate-200/70 shadow-sm;
   }
 
-  /* Premium card with subtle glow */
+  /* Premium card with silky smooth hover */
   .card-premium {
-    @apply bg-surface border border-border rounded-2xl shadow-sm
+    @apply bg-surface border border-border rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.03)]
            transition-all duration-300 ease-out
-           hover:shadow-lg hover:shadow-primary/5 hover:border-primary/20;
+           hover:shadow-[0_12px_32px_rgba(37,99,235,0.08)] hover:border-primary/30 hover:-translate-y-0.5;
+  }
+
+  /* Interactive smooth button presets */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark 
+           active:scale-[0.98] text-white font-semibold px-4 py-2.5 rounded-xl 
+           transition-all duration-200 shadow-sm hover:shadow-md hover:shadow-primary/25;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 bg-secondary hover:bg-secondary-dark 
+           active:scale-[0.98] text-white font-semibold px-4 py-2.5 rounded-xl 
+           transition-all duration-200 shadow-sm hover:shadow-md hover:shadow-secondary/25;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 bg-surface hover:bg-surface-muted 
+           border border-border hover:border-primary/40 active:scale-[0.98] 
+           text-text-primary font-medium px-3.5 py-2 rounded-xl transition-all duration-200;
+  }
+
+  /* Pill tabs with silky animation */
+  .tab-pill {
+    @apply px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ease-out;
   }
 
   /* Gradient text utility */
   .text-gradient {
-    @apply text-transparent bg-clip-text bg-gradient-to-r from-primary via-secondary to-primary;
+    @apply text-transparent bg-clip-text bg-gradient-to-r from-primary via-accent to-secondary;
     background-size: 200% auto;
   }
 

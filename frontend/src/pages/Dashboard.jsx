@@ -209,7 +209,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="pt-24 pb-16 min-h-screen bg-surface-muted">
+    <div className="pt-24 pb-20 min-h-screen bg-slate-50/70">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Header */}

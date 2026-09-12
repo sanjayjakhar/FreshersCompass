@@ -29,10 +29,16 @@ app.get("/api/health", (req, res) => {
 // ---------- Routes ----------
 import authRoutes from "./routes/auth.routes.js";
 import resumeRoutes from "./routes/resume.routes.js";
+import githubRoutes from "./routes/github.routes.js";
+import jobRoutes from "./routes/job.routes.js";
+import linkedinRoutes from "./routes/linkedin.routes.js";
 // import applicationRoutes from "./routes/application.routes.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/resume", resumeRoutes);
+app.use("/api/github", githubRoutes);
+app.use("/api/jobs", jobRoutes);
+app.use("/api/linkedin", linkedinRoutes);
 // app.use("/api/applications", applicationRoutes);
 
 // ---------- Database connection ----------
