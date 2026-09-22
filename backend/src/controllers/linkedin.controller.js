@@ -130,7 +130,7 @@ export const generateLaunchPost = async (req, res) => {
         tech_stack: tech_stack || [],
         highlights: highlights || [],
       },
-      { headers: getAiServiceHeaders(), timeout: 45000 }
+      { headers: getAiServiceHeaders(), timeout: 90000 }
     );
 
     return res.status(200).json({
@@ -163,7 +163,7 @@ export const generateColdOutreach = async (req, res) => {
         top_skills: top_skills || ["React", "Node.js", "Python"],
         college: college || "BIT Mesra",
       },
-      { headers: getAiServiceHeaders(), timeout: 45000 }
+      { headers: getAiServiceHeaders(), timeout: 90000 }
     );
 
     return res.status(200).json({

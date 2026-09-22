@@ -10,7 +10,7 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
     if gemini_key:
         try:
             init_gemini()
-            for model_name in ["gemini-flash-latest", "gemini-2.5-flash"]:
+            for model_name in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]:
                 try:
                     m = genai.GenerativeModel(model_name)
                     resp = m.generate_content(
@@ -18,7 +18,8 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
                         generation_config=genai.GenerationConfig(
                             response_mime_type="application/json",
                             temperature=temperature
-                        )
+                        ),
+                        request_options={"timeout": 15}
                     )
                     if resp and resp.text and resp.text.strip():
                         return json.loads(resp.text.strip())
@@ -32,7 +33,7 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
     if groq_key:
         try:
             from groq import Groq
-            client = Groq(api_key=groq_key)
+            client = Groq(api_key=groq_key, timeout=15.0)
             for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
                 try:
                     chat = client.chat.completions.create(

@@ -27,7 +27,7 @@ export const uploadResume = async (req, res) => {
           ...formData.getHeaders(),
           'x-internal-key': process.env.AI_SERVICE_INTERNAL_KEY || 'ai_internal_secret_fc_98u23r09ju023jf',
         },
-        timeout: 45000,
+        timeout: 90000,
       });
       parsedData = response.data;
     } catch (aiErr) {

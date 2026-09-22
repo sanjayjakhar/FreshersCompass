@@ -110,17 +110,18 @@ def execute_codebase_llm(prompt: str) -> Tuple[str, str]:
     Calls primary LLM (Gemini) or secondary LLM (Groq) with the retrieved prompt.
     Returns (answer_text, provider_model_used).
     """
-    # 1. Primary: Gemini (gemini-flash-latest, gemini-2.5-flash)
+    # 1. Primary: Gemini (gemini-2.5-flash, gemini-3.5-flash)
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
         try:
             init_gemini()
-            for model_name in ["gemini-flash-latest", "gemini-2.5-flash"]:
+            for model_name in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]:
                 try:
                     m = genai.GenerativeModel(model_name)
                     resp = m.generate_content(
                         prompt,
-                        generation_config=genai.GenerationConfig(temperature=0.2)
+                        generation_config=genai.GenerationConfig(temperature=0.2),
+                        request_options={"timeout": 15}
                     )
                     if resp and resp.text and resp.text.strip():
                         return resp.text.strip(), f"Google Gemini ({model_name})"
@@ -135,7 +136,7 @@ def execute_codebase_llm(prompt: str) -> Tuple[str, str]:
     if groq_key:
         try:
             from groq import Groq
-            client = Groq(api_key=groq_key)
+            client = Groq(api_key=groq_key, timeout=15.0)
             for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
                 try:
                     chat = client.chat.completions.create(

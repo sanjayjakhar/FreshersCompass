@@ -86,7 +86,7 @@ export const getRecruiterPitch = async (req, res) => {
     const response = await axios.post(
       `${aiServiceUrl}/github/pitch`,
       { repo_url },
-      { headers: getAiServiceHeaders(), timeout: 45000 }
+      { headers: getAiServiceHeaders(), timeout: 90000 }
     );
 
     return res.status(200).json({
@@ -288,7 +288,7 @@ export const generateProfileReadme = async (req, res) => {
         top_skills: top_skills || [],
         bio: bio || "",
       },
-      { headers: getAiServiceHeaders(), timeout: 45000 }
+      { headers: getAiServiceHeaders(), timeout: 90000 }
     );
 
     return res.status(200).json({
