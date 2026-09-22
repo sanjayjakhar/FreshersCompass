@@ -20,7 +20,7 @@ export const analyzeRepository = async (req, res) => {
     const response = await axios.post(
       `${aiServiceUrl}/github/analyze`,
       { repo_url },
-      { headers: getAiServiceHeaders(), timeout: 90000 }
+      { headers: getAiServiceHeaders(), timeout: 180000 }
     );
 
     return res.status(200).json({
@@ -100,6 +100,38 @@ export const getRecruiterPitch = async (req, res) => {
 
     return res.status(statusCode).json({
       message: "Failed to generate recruiter pitch",
+      details: detail,
+    });
+  }
+};
+
+export const getInterviewPrep = async (req, res) => {
+  try {
+    const { repo_url } = req.body;
+
+    if (!repo_url) {
+      return res.status(400).json({ message: "Repository URL is required." });
+    }
+
+    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+
+    const response = await axios.post(
+      `${aiServiceUrl}/github/interview-prep`,
+      { repo_url },
+      { headers: getAiServiceHeaders(), timeout: 60000 }
+    );
+
+    return res.status(200).json({
+      message: "Interview prep kit generated successfully",
+      data: response.data,
+    });
+  } catch (error) {
+    console.error("Error generating interview prep:", error.response?.data || error.message);
+    const statusCode = error.response?.status || 500;
+    const detail = error.response?.data?.detail || error.message;
+
+    return res.status(statusCode).json({
+      message: "Failed to generate interview prep kit",
       details: detail,
     });
   }

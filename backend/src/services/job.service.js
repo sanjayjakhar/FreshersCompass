@@ -28,7 +28,7 @@ const INDIA_TECH_JOBS_FEED = [
   },
   {
     id: "in-2",
-    title: "Associate Software Engineer — Fresher Batch 2024 / 2025",
+    title: "Associate Software Engineer — Backend (Fresher Batch 2024 / 2025)",
     company: "Swiggy",
     location: "Bengaluru / Hyderabad, India",
     remote: false,
@@ -36,7 +36,7 @@ const INDIA_TECH_JOBS_FEED = [
     grad_year: ["2024", "2025"],
     domain: "Backend",
     url: "https://careers.swiggy.com/",
-    tags: ["Java", "Python", "Go", "Distributed Systems", "MongoDB"],
+    tags: ["Java", "Python", "Go", "Distributed Systems", "MongoDB", "Backend"],
     description: "Work on Swiggy's logistics routing and real-time order dispatch engine. Perfect for graduates passionate about scalable distributed architectures and microservices.",
     source: "India Tech Hubs",
     stipend_salary: "14 - 18 LPA",
@@ -52,7 +52,7 @@ const INDIA_TECH_JOBS_FEED = [
     grad_year: ["2025", "2026"],
     domain: "Frontend",
     url: "https://cred.club/careers",
-    tags: ["React.js", "Next.js", "Tailwind CSS", "TypeScript", "Redux"],
+    tags: ["React.js", "Next.js", "Tailwind CSS", "TypeScript", "Redux", "Frontend"],
     description: "Build aesthetic, fluid UI experiences for CRED members. Strong attention to visual design, micro-animations, and frontend performance required.",
     source: "India Tech Hubs",
     stipend_salary: "₹50,000 / month",
@@ -92,19 +92,19 @@ const INDIA_TECH_JOBS_FEED = [
   },
   {
     id: "in-6",
-    title: "Graduate Software Engineer (TCS Digital / Prime)",
-    company: "Tata Consultancy Services (TCS)",
-    location: "Pune / Bengaluru / Hyderabad, India",
-    remote: false,
-    type: "Full Time",
-    grad_year: ["2024", "2025"],
-    domain: "Full-Stack",
-    url: "https://www.tcs.com/careers",
-    tags: ["Java", "Python", "SQL", "Spring Boot", "React.js"],
-    description: "Digital cadence hiring for fresh engineering graduates. Work across enterprise cloud migration, modernization, and digital transformation.",
+    title: "Backend API Engineering Intern (Node.js / Express)",
+    company: "Postman",
+    location: "Bengaluru, India",
+    remote: true,
+    type: "Internship",
+    grad_year: ["2025", "2026", "2027"],
+    domain: "Backend",
+    url: "https://www.postman.com/careers/",
+    tags: ["Node.js", "JavaScript", "REST APIs", "Docker", "MongoDB", "Backend"],
+    description: "Collaborate with the Postman public API platform team. Build resilient backend microservices and API gateways handling billions of developer requests.",
     source: "India Tech Hubs",
-    stipend_salary: "7.5 - 9.2 LPA",
-    posted_at: "3 days ago",
+    stipend_salary: "₹55,000 / month",
+    posted_at: "Today",
   },
   {
     id: "in-7",
@@ -124,7 +124,7 @@ const INDIA_TECH_JOBS_FEED = [
   },
   {
     id: "in-8",
-    title: "Software Development Engineer 1 (Fresher 2024 / 2025)",
+    title: "Software Development Engineer 1 — Core Backend (Fresher 2024 / 2025)",
     company: "Flipkart",
     location: "Bengaluru, India",
     remote: false,
@@ -132,7 +132,7 @@ const INDIA_TECH_JOBS_FEED = [
     grad_year: ["2024", "2025"],
     domain: "Backend",
     url: "https://www.flipkartcareers.com/",
-    tags: ["Java", "Distributed Systems", "Kafka", "Redis", "DSA"],
+    tags: ["Java", "Distributed Systems", "Kafka", "Redis", "DSA", "Backend"],
     description: "Core e-commerce catalog, pricing, and fulfillment platform engineering. High emphasis on data structures, algorithms, and modular design.",
     source: "India Tech Hubs",
     stipend_salary: "18 - 24 LPA",
@@ -140,6 +140,38 @@ const INDIA_TECH_JOBS_FEED = [
   },
   {
     id: "in-9",
+    title: "Systems & Backend Developer (Go / Python) — Fresher",
+    company: "Zerodha",
+    location: "Bengaluru, India",
+    remote: true,
+    type: "Full Time",
+    grad_year: ["2024", "2025", "2026"],
+    domain: "Backend",
+    url: "https://zerodha.tech/",
+    tags: ["Go", "Python", "PostgreSQL", "Redis", "Linux", "Backend"],
+    description: "Build ultra-low-latency financial market systems with Zerodha's core tech team. Clean idiomatic Go code, concurrency models, and open source ethos.",
+    source: "India Tech Hubs",
+    stipend_salary: "15 - 20 LPA",
+    posted_at: "Just now",
+  },
+  {
+    id: "in-10",
+    title: "SDE-1 Backend (Python / Django / Fast-paced)",
+    company: "Urban Company",
+    location: "Gurugram / Bengaluru, India",
+    remote: false,
+    type: "Full Time",
+    grad_year: ["2024", "2025"],
+    domain: "Backend",
+    url: "https://www.urbancompany.com/careers",
+    tags: ["Python", "Django", "FastAPI", "PostgreSQL", "Kafka", "Backend"],
+    description: "Design and implement high-availability microservices for Urban Company's global service fulfillment network spanning India, UAE, and Singapore.",
+    source: "India Tech Hubs",
+    stipend_salary: "16 - 21 LPA",
+    posted_at: "Yesterday",
+  },
+  {
+    id: "in-11",
     title: "Web Developer Intern (Early Stage Startup)",
     company: "BuildFast Labs",
     location: "Remote India",
@@ -155,7 +187,7 @@ const INDIA_TECH_JOBS_FEED = [
     posted_at: "Just now",
   },
   {
-    id: "in-10",
+    id: "in-12",
     title: "Data Analyst & Python Intern",
     company: "Groww",
     location: "Bengaluru, India",
@@ -169,8 +201,99 @@ const INDIA_TECH_JOBS_FEED = [
     source: "India Tech Hubs",
     stipend_salary: "₹35,000 / month",
     posted_at: "Yesterday",
+  },
+  {
+    id: "in-13",
+    title: "Graduate Software Engineer (TCS Digital / Prime)",
+    company: "Tata Consultancy Services (TCS)",
+    location: "Pune / Bengaluru / Hyderabad, India",
+    remote: false,
+    type: "Full Time",
+    grad_year: ["2024", "2025"],
+    domain: "Full-Stack",
+    url: "https://www.tcs.com/careers",
+    tags: ["Java", "Python", "SQL", "Spring Boot", "React.js"],
+    description: "Digital cadence hiring for fresh engineering graduates. Work across enterprise cloud migration, modernization, and digital transformation.",
+    source: "India Tech Hubs",
+    stipend_salary: "7.5 - 9.2 LPA",
+    posted_at: "3 days ago",
+  },
+  {
+    id: "in-14",
+    title: "Backend Engineer — Payments & Settlements",
+    company: "Juspay",
+    location: "Bengaluru, India",
+    remote: false,
+    type: "Full Time",
+    grad_year: ["2024", "2025"],
+    domain: "Backend",
+    url: "https://juspay.in/careers",
+    tags: ["Haskell", "Rust", "Java", "PostgreSQL", "Functional Programming", "Backend"],
+    description: "Powering over 100 million daily transactions for India's largest merchants. Dive into highly resilient functional backend architectures.",
+    source: "India Tech Hubs",
+    stipend_salary: "15 - 22 LPA",
+    posted_at: "Today",
   }
 ];
+
+// Helper to intelligently classify domains based on title and tags
+const detectJobDomain = (title = "", tags = []) => {
+  const t = title.toLowerCase();
+  const tagList = (tags || []).map((x) => String(x).toLowerCase());
+
+  if (
+    t.includes("backend") ||
+    t.includes("back-end") ||
+    t.includes("back end") ||
+    t.includes("node") ||
+    t.includes("golang") ||
+    t.includes("python developer") ||
+    t.includes("api") ||
+    t.includes("server") ||
+    t.includes("java developer") ||
+    t.includes("systems") ||
+    tagList.some((tag) => ["backend", "node.js", "express", "fastapi", "django", "spring boot", "kafka", "redis", "postgresql", "mongodb", "sql", "golang"].includes(tag))
+  ) {
+    return "Backend";
+  }
+
+  if (
+    t.includes("frontend") ||
+    t.includes("front-end") ||
+    t.includes("front end") ||
+    t.includes("react") ||
+    t.includes("ui") ||
+    t.includes("vue") ||
+    t.includes("angular") ||
+    tagList.some((tag) => ["frontend", "react", "react.js", "next.js", "vue", "tailwind", "typescript", "javascript", "css"].includes(tag))
+  ) {
+    return "Frontend";
+  }
+
+  if (
+    t.includes("ai") ||
+    t.includes("ml") ||
+    t.includes("machine learning") ||
+    t.includes("data") ||
+    t.includes("nlp") ||
+    t.includes("llm") ||
+    tagList.some((tag) => ["python", "ai", "ml", "pytorch", "nlp", "rag", "pandas", "data"].includes(tag))
+  ) {
+    return "AI/ML";
+  }
+
+  if (
+    t.includes("devops") ||
+    t.includes("cloud") ||
+    t.includes("sre") ||
+    t.includes("infrastructure") ||
+    tagList.some((tag) => ["devops", "cloud", "aws", "kubernetes", "docker", "terraform", "ci/cd"].includes(tag))
+  ) {
+    return "DevOps";
+  }
+
+  return "Full-Stack";
+};
 
 export const fetchLiveJobs = async (options = {}) => {
   const { forceRefresh = false } = options;
@@ -187,6 +310,8 @@ export const fetchLiveJobs = async (options = {}) => {
     const arbeitnowRes = await axios.get("https://www.arbeitnow.com/api/job-board-api", { timeout: 7000 });
     const jobs = arbeitnowRes.data?.data || [];
     for (const j of jobs.slice(0, 25)) {
+      const tags = (j.tags || []).slice(0, 6);
+      const domain = detectJobDomain(j.title, tags);
       normalizedJobs.push({
         id: `ab-${j.slug || Math.random().toString(36).substring(2, 8)}`,
         title: j.title,
@@ -195,11 +320,9 @@ export const fetchLiveJobs = async (options = {}) => {
         remote: j.remote ?? true,
         type: (j.title || "").toLowerCase().includes("intern") ? "Internship" : "Full Time",
         grad_year: ["2024", "2025", "2026"],
-        domain: (j.title || "").toLowerCase().includes("frontend") ? "Frontend" :
-                (j.title || "").toLowerCase().includes("backend") ? "Backend" :
-                (j.title || "").toLowerCase().includes("data") ? "AI/ML" : "Full-Stack",
+        domain,
         url: j.url,
-        tags: (j.tags || []).slice(0, 6),
+        tags,
         description: (j.description || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
         source: "Arbeitnow Global",
         stipend_salary: "Competitive",
@@ -215,6 +338,8 @@ export const fetchLiveJobs = async (options = {}) => {
     const remotiveRes = await axios.get("https://remotive.com/api/remote-jobs?category=software-dev&limit=20", { timeout: 7000 });
     const jobs = remotiveRes.data?.jobs || [];
     for (const j of jobs.slice(0, 20)) {
+      const tags = (j.tags || []).slice(0, 6);
+      const domain = detectJobDomain(j.title, tags);
       normalizedJobs.push({
         id: `rm-${j.id || Math.random().toString(36).substring(2, 8)}`,
         title: j.title,
@@ -223,10 +348,9 @@ export const fetchLiveJobs = async (options = {}) => {
         remote: true,
         type: (j.title || "").toLowerCase().includes("intern") ? "Internship" : "Full Time",
         grad_year: ["2024", "2025", "2026"],
-        domain: (j.title || "").toLowerCase().includes("front") ? "Frontend" :
-                (j.title || "").toLowerCase().includes("back") ? "Backend" : "Full-Stack",
+        domain,
         url: j.url,
-        tags: (j.tags || []).slice(0, 6),
+        tags,
         description: (j.description || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
         source: "Remotive Remote",
         stipend_salary: j.salary || "Competitive",
@@ -243,6 +367,8 @@ export const fetchLiveJobs = async (options = {}) => {
     const jobs = jobicyRes.data?.jobs || [];
     for (const j of jobs.slice(0, 20)) {
       const jobTypeStr = Array.isArray(j.jobType) ? j.jobType.join(" ") : String(j.jobType || "");
+      const tags = (j.jobIndustry || []).slice(0, 5);
+      const domain = detectJobDomain(j.jobTitle, tags);
       normalizedJobs.push({
         id: `jc-${j.id || Math.random().toString(36).substring(2, 8)}`,
         title: j.jobTitle,
@@ -251,9 +377,9 @@ export const fetchLiveJobs = async (options = {}) => {
         remote: true,
         type: jobTypeStr.toLowerCase().includes("intern") ? "Internship" : "Full Time",
         grad_year: ["2024", "2025", "2026"],
-        domain: "Full-Stack",
+        domain,
         url: j.url,
-        tags: (j.jobIndustry || []).slice(0, 5),
+        tags,
         description: (j.jobExcerpt || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
         source: "Jobicy Tech",
         stipend_salary: "Competitive",

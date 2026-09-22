@@ -4,6 +4,57 @@ import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 from app.services.gemini import init_gemini
 
+def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
+    """Executes prompt with primary Gemini and automatic Groq fallback, returning parsed JSON."""
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            init_gemini()
+            for model_name in ["gemini-flash-latest", "gemini-2.5-flash"]:
+                try:
+                    m = genai.GenerativeModel(model_name)
+                    resp = m.generate_content(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            response_mime_type="application/json",
+                            temperature=temperature
+                        )
+                    )
+                    if resp and resp.text and resp.text.strip():
+                        return json.loads(resp.text.strip())
+                except Exception as m_err:
+                    print(f"[LinkedIn AI] Gemini {model_name} notice: {m_err}")
+                    continue
+        except Exception as g_err:
+            print(f"[LinkedIn AI] Gemini init notice: {g_err}")
+
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key:
+        try:
+            from groq import Groq
+            client = Groq(api_key=groq_key)
+            for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+                try:
+                    chat = client.chat.completions.create(
+                        messages=[
+                            {"role": "system", "content": "You are an expert AI Career and LinkedIn specialist. Return strictly valid JSON matching the requested schema."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        model=model_name,
+                        response_format={"type": "json_object"},
+                        temperature=temperature
+                    )
+                    text = chat.choices[0].message.content
+                    if text and text.strip():
+                        return json.loads(text.strip())
+                except Exception as q_err:
+                    print(f"[LinkedIn AI] Groq {model_name} notice: {q_err}")
+                    continue
+        except Exception as grq_err:
+            print(f"[LinkedIn AI] Groq error: {grq_err}")
+
+    raise ValueError("LLM execution failed on both Gemini and Groq providers")
+
 def analyze_linkedin_profile(
     headline: str,
     about: str,
@@ -69,16 +120,9 @@ Return strictly a JSON object conforming to this schema:
 """
 
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                temperature=0.3
-            )
-        )
-        return json.loads(response.text)
+        return execute_llm_json(prompt, temperature=0.3)
     except Exception as e:
-        print(f"Gemini LinkedIn analysis notice: {e}")
+        print(f"LinkedIn AI analysis notice: {e}")
         return {
             "visibility_score": 72,
             "score_breakdown": {
@@ -139,14 +183,7 @@ Return strictly a JSON object:
 """
 
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                temperature=0.4
-            )
-        )
-        return json.loads(response.text)
+        return execute_llm_json(prompt, temperature=0.4)
     except Exception as e:
         print(f"Launch post notice: {e}")
         return {
@@ -189,14 +226,7 @@ Return strictly a JSON object:
 """
 
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                temperature=0.3
-            )
-        )
-        return json.loads(response.text)
+        return execute_llm_json(prompt, temperature=0.3)
     except Exception as e:
         print(f"Cold outreach notice: {e}")
         return {

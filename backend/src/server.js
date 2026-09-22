@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import morgan from "morgan";
 import dotenv from "dotenv";
+import sanitizeInput from "./middleware/sanitize.js";
 
 dotenv.config();
 
@@ -12,6 +13,7 @@ const PORT = process.env.PORT || 5000;
 
 // ---------- Middleware ----------
 app.use(express.json());
+app.use(sanitizeInput);
 app.use(cookieParser());
 app.use(morgan("dev"));
 app.use(
@@ -32,20 +34,26 @@ import resumeRoutes from "./routes/resume.routes.js";
 import githubRoutes from "./routes/github.routes.js";
 import jobRoutes from "./routes/job.routes.js";
 import linkedinRoutes from "./routes/linkedin.routes.js";
-// import applicationRoutes from "./routes/application.routes.js";
+import applicationRoutes from "./routes/application.routes.js";
+import profileRoutes from "./routes/profile.routes.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/resume", resumeRoutes);
 app.use("/api/github", githubRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/linkedin", linkedinRoutes);
-// app.use("/api/applications", applicationRoutes);
+app.use("/api/applications", applicationRoutes);
+app.use("/api/profile", profileRoutes);
 
 // ---------- Database connection ----------
+const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/FreshersCompass";
 mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+  .connect(mongoUri, {
+    serverSelectionTimeoutMS: 5000,
+    autoIndex: true,
+  })
+  .then(() => console.log("MongoDB connected successfully to:", mongoUri))
+  .catch((err) => console.error("MongoDB connection error:", err.message));
 
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);

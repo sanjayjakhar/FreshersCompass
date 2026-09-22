@@ -1,23 +1,81 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Compass, Github, FileText, Code2, Linkedin,
-  Briefcase, Check, X, ArrowRight
+  Briefcase, Check, X, ArrowRight, Trash2, Sparkles, RefreshCw
 } from 'lucide-react';
+import { fetchProfileFromDB, updateProfileInDB, fetchLatestResume } from '../services/api';
 
 export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [showGithubModal, setShowGithubModal] = useState(false);
   const [githubUser, setGithubUser] = useState('');
+  const [connectedUser, setConnectedUser] = useState('');
+  const [resumeDetectedUser, setResumeDetectedUser] = useState('');
+
+  // Auto-sync across MongoDB and custom events
+  useEffect(() => {
+    const loadProfileData = async () => {
+      try {
+        const [profile, resume] = await Promise.all([
+          fetchProfileFromDB(),
+          fetchLatestResume(),
+        ]);
+        if (profile?.github_username) {
+          setConnectedUser(profile.github_username);
+          setGithubUser(profile.github_username);
+        }
+        if (resume?.github_username) {
+          setResumeDetectedUser(resume.github_username.replace(/^@/, '').trim());
+        }
+      } catch (e) {
+        console.error('Error fetching Navbar profile from MongoDB:', e);
+      }
+    };
+    loadProfileData();
+
+    const handleSync = (e) => {
+      const u = e?.detail !== undefined ? e.detail : '';
+      setConnectedUser(u);
+      setGithubUser(u);
+    };
+
+    window.addEventListener('freshercompass_profile_updated', handleSync);
+    return () => {
+      window.removeEventListener('freshercompass_profile_updated', handleSync);
+    };
+  }, []);
 
   const isActive = (path) => location.pathname === path;
 
-  const handleSyncGithub = (e) => {
-    e.preventDefault();
-    if (!githubUser.trim()) return;
+  const handleSyncGithub = async (e) => {
+    if (e) e.preventDefault();
+    const uname = githubUser.trim().replace(/^@/, '');
+    if (!uname) return;
+    await updateProfileInDB({ github_username: uname });
+    setConnectedUser(uname);
+    setGithubUser(uname);
+    window.dispatchEvent(new CustomEvent('freshercompass_profile_updated', { detail: uname }));
     setShowGithubModal(false);
-    navigate(`/codebase?user=${encodeURIComponent(githubUser.trim())}`);
+    navigate(`/codebase?user=${encodeURIComponent(uname)}`);
+  };
+
+  const handleDisconnect = async () => {
+    await updateProfileInDB({ github_username: '' });
+    setConnectedUser('');
+    setGithubUser('');
+    window.dispatchEvent(new CustomEvent('freshercompass_profile_updated', { detail: '' }));
+    setShowGithubModal(false);
+  };
+
+  const handleApplyDetected = async (uname) => {
+    setGithubUser(uname);
+    await updateProfileInDB({ github_username: uname });
+    setConnectedUser(uname);
+    window.dispatchEvent(new CustomEvent('freshercompass_profile_updated', { detail: uname }));
+    setShowGithubModal(false);
+    navigate(`/codebase?user=${encodeURIComponent(uname)}`);
   };
 
   return (
@@ -92,11 +150,26 @@ export default function Navbar() {
             {/* Right Action Buttons */}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setShowGithubModal(true)}
-                className="flex items-center gap-1.5 bg-surface border border-border/80 hover:border-primary/40 text-text-primary px-3.5 py-2 rounded-xl text-xs font-semibold transition-all hover:bg-surface-muted hover:-translate-y-0.5 shadow-xs"
+                onClick={() => {
+                  setGithubUser(connectedUser || resumeDetectedUser || '');
+                  setShowGithubModal(true);
+                }}
+                className={`flex items-center gap-1.5 border px-3.5 py-2 rounded-xl text-xs font-semibold transition-all hover:-translate-y-0.5 shadow-xs group ${
+                  connectedUser
+                    ? 'bg-primary/5 border-primary/30 text-primary hover:bg-primary/10'
+                    : 'bg-surface border-border/80 hover:border-primary/40 text-text-primary hover:bg-surface-muted'
+                }`}
+                title={connectedUser ? `Connected as @${connectedUser} - Click to switch or disconnect` : "Connect GitHub"}
               >
-                <Github className="h-3.5 w-3.5 text-text-primary" />
-                <span>Connect GitHub</span>
+                {connectedUser ? (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>
+                )}
+                <Github className="h-3.5 w-3.5" />
+                <span className={connectedUser ? "font-mono text-xs font-bold" : ""}>
+                  {connectedUser ? `@${connectedUser}` : 'Connect GitHub'}
+                </span>
               </button>
 
               <Link
@@ -128,15 +201,56 @@ export default function Navbar() {
                 <Github className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-bold text-text-primary text-base">Connect GitHub Profile</h3>
-                <p className="text-xs text-text-secondary">Sync your public repositories with 1 click</p>
+                <h3 className="font-bold text-text-primary text-base">GitHub Profile Integration</h3>
+                <p className="text-xs text-text-secondary">Sync your repositories for Codebase RAG</p>
               </div>
             </div>
+
+            {/* Currently Connected Info */}
+            {connectedUser && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <div className="text-xs">
+                    <span className="text-emerald-800 font-semibold">Active: </span>
+                    <span className="font-mono font-bold text-emerald-950">@{connectedUser}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  className="flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg transition-colors border border-rose-200"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Disconnect
+                </button>
+              </div>
+            )}
+
+            {/* Auto-detected from Resume Banner */}
+            {resumeDetectedUser && resumeDetectedUser !== connectedUser && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-blue-600 shrink-0" />
+                  <div className="text-xs">
+                    <span className="text-blue-800 font-semibold">Found in resume: </span>
+                    <span className="font-mono font-bold text-blue-950">@{resumeDetectedUser}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleApplyDetected(resumeDetectedUser)}
+                  className="text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded-lg transition-colors shadow-xs"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSyncGithub} className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-text-primary block mb-1">
-                  GitHub Username
+                  GitHub Username or Handle
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted font-mono">
@@ -146,29 +260,46 @@ export default function Navbar() {
                     type="text"
                     value={githubUser}
                     onChange={(e) => setGithubUser(e.target.value)}
-                    placeholder="sanjayjakhar"
+                    placeholder="your-github-username"
                     className="w-full pl-24 pr-4 py-2 bg-surface-muted rounded-xl border border-border text-sm text-text-primary focus:outline-none focus:border-primary font-mono text-xs"
                     autoFocus
                   />
                 </div>
+                <p className="text-[11px] text-text-muted mt-1.5">
+                  Enter your username manually or upload your resume to auto-detect.
+                </p>
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowGithubModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-text-secondary hover:bg-surface-muted transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!githubUser.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary hover:bg-primary-dark disabled:opacity-50 text-surface text-xs font-semibold transition-all shadow-sm shadow-primary/20"
-                >
-                  <span>Sync & Browse Repos</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
+              <div className="pt-2 flex items-center justify-between gap-2 border-t border-border/50">
+                {connectedUser ? (
+                  <button
+                    type="button"
+                    onClick={handleDisconnect}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                  >
+                    Clear Profile
+                  </button>
+                ) : (
+                  <div></div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowGithubModal(false)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold text-text-secondary hover:bg-surface-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!githubUser.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary hover:bg-primary-dark disabled:opacity-50 text-surface text-xs font-semibold transition-all shadow-sm shadow-primary/20"
+                  >
+                    <span>Save & Sync Repos</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             </form>
           </div>

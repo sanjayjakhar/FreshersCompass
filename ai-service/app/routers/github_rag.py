@@ -1,4 +1,5 @@
 import os
+import concurrent.futures
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
@@ -12,12 +13,13 @@ from app.services.rag_service import (
     index_repository_chunks,
     answer_codebase_question,
     generate_recruiter_pitch,
+    generate_interview_prep,
     REPO_VECTOR_STORE
 )
 
 router = APIRouter()
 
-# Cache parsed repository data in memory so subsequent chat queries don't re-download
+# Cache parsed repository data in memory so subsequent queries don't re-download
 REPO_CACHE: Dict[str, Dict[str, Any]] = {}
 
 class AnalyzeRepoRequest(BaseModel):
@@ -29,6 +31,9 @@ class ChatQuestionRequest(BaseModel):
     history: Optional[List[Dict[str, str]]] = []
 
 class RecruiterPitchRequest(BaseModel):
+    repo_url: str
+
+class InterviewPrepRequest(BaseModel):
     repo_url: str
 
 def verify_internal_auth(x_internal_key: Optional[str]):
@@ -50,20 +55,35 @@ async def analyze_repository(
         owner, repo_name = parse_repo_identifier(payload.repo_url)
         full_name = f"{owner}/{repo_name}".lower()
 
-        # Ingest repo data from GitHub
+        # 1. Return from cache immediately if already analyzed and indexed
+        if full_name in REPO_CACHE and full_name in REPO_VECTOR_STORE:
+            cached = REPO_CACHE[full_name]
+            chunks_count = len(REPO_VECTOR_STORE[full_name].get("chunks", []))
+            return {
+                "status": "success",
+                "repo_id": full_name,
+                "metadata": cached["metadata"],
+                "health": cached["health"],
+                "total_files_count": cached.get("total_files_count", 0),
+                "files_sample": cached.get("all_files", [])[:30],
+                "recruiter_pitch": cached.get("recruiter_pitch", []),
+                "indexed_chunks_count": chunks_count,
+            }
+
+        # 2. Ingest repo data from GitHub
         repo_data = fetch_repository_data(payload.repo_url)
         meta = repo_data["metadata"]
         health = repo_data["health"]
         file_contents = repo_data["file_contents"]
 
-        # Chunk files for RAG vector search
+        # 3. Chunk files for RAG vector search
         chunks = chunk_codebase_files(file_contents)
         index_repository_chunks(full_name, chunks)
 
-        # Generate recruiter pitch
+        # 4. Generate recruiter pitch
         pitch_bullets = generate_recruiter_pitch(meta, health)
 
-        # Cache metadata
+        # 5. Cache metadata in memory
         REPO_CACHE[full_name] = {
             "metadata": meta,
             "health": health,
@@ -162,6 +182,42 @@ async def get_recruiter_pitch(
             "status": "success",
             "repo_id": full_name,
             "recruiter_pitch": bullets
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/interview-prep")
+async def get_interview_prep_endpoint(
+    payload: InterviewPrepRequest,
+    x_internal_key: Optional[str] = Header(None)
+):
+    verify_internal_auth(x_internal_key)
+
+    try:
+        owner, repo_name = parse_repo_identifier(payload.repo_url)
+        full_name = f"{owner}/{repo_name}".lower()
+
+        if full_name not in REPO_CACHE or "interview_prep" not in REPO_CACHE[full_name]:
+            repo_data = fetch_repository_data(payload.repo_url)
+            prep = generate_interview_prep(
+                repo_data["metadata"],
+                repo_data["health"],
+                repo_data.get("all_files", [])
+            )
+            if full_name not in REPO_CACHE:
+                REPO_CACHE[full_name] = {
+                    "metadata": repo_data["metadata"],
+                    "health": repo_data["health"],
+                    "all_files": repo_data.get("all_files", [])[:50]
+                }
+            REPO_CACHE[full_name]["interview_prep"] = prep
+        else:
+            prep = REPO_CACHE[full_name]["interview_prep"]
+
+        return {
+            "status": "success",
+            "repo_id": full_name,
+            "interview_prep": prep
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

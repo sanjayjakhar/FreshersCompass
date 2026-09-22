@@ -42,7 +42,7 @@ def get_github_client() -> Github:
         return Github(token, retry=0, timeout=10)
     return Github(retry=0, timeout=10)
 
-def fetch_local_repository_data(owner: str, repo_name: str, max_files_to_read: int = 40) -> Dict[str, Any]:
+def fetch_local_repository_data(owner: str, repo_name: str, max_files_to_read: int = 150) -> Dict[str, Any]:
     """Ingests local project workspace directly from disk (fast, offline, zero rate limit)."""
     # Find repository root
     current_dir = os.path.abspath(os.path.dirname(__file__))
@@ -118,7 +118,7 @@ def fetch_repository_data(repo_input: str, max_files_to_read: int = 35) -> Dict[
 
     # If it's the current project, ingest directly from disk for instant speed
     if repo_name.lower() in ("fresherscompass", "freshercompass", "freshers-compass"):
-        return fetch_local_repository_data(owner, repo_name, max_files_to_read)
+        return fetch_local_repository_data(owner, repo_name, max(max_files_to_read, 150))
 
     g = get_github_client()
     

@@ -5,8 +5,10 @@ import {
   Github, GitBranch, Star, GitFork, AlertCircle, CheckCircle2,
   Code2, Send, Bot, User, Sparkles, Copy, Check, FileCode,
   ShieldCheck, BookOpen, Layers, Terminal, RefreshCw, ExternalLink,
-  ChevronRight, ArrowRight, CornerDownLeft, FileText, Download, Rocket
+  ChevronRight, ArrowRight, CornerDownLeft, FileText, Download, Rocket,
+  Trash2, Info
 } from 'lucide-react';
+import { fetchProfileFromDB, updateProfileInDB } from '../services/api';
 
 // ---------- Circular Animated Health Score Ring ----------
 function ScoreRing({ score, label, sublabel, size = 110, strokeWidth = 8, colorOverride = null }) {
@@ -95,29 +97,56 @@ function FormattedMessage({ text }) {
         // Parse paragraphs, bold, lists, and inline code
         const paragraphs = part.split('\n\n');
         return (
-          <div key={index} className="space-y-2">
+          <div key={index} className="space-y-2.5">
             {paragraphs.map((para, pIdx) => {
+              // Blockquotes (e.g. spoken interview scripts)
+              if (para.trim().startsWith('>')) {
+                const quoteText = para.replace(/^>\s*/gm, '');
+                return (
+                  <div
+                    key={pIdx}
+                    className="my-2.5 p-3.5 rounded-card bg-primary-subtle/40 border-l-4 border-primary text-text-dark font-medium text-sm leading-relaxed"
+                  >
+                    <span dangerouslySetInnerHTML={{ __html: renderInline(quoteText) }} />
+                  </div>
+                );
+              }
+
+              // Bullet lists
               if (para.trim().startsWith('- ') || para.trim().startsWith('* ')) {
                 const items = para.trim().split('\n');
                 return (
-                  <ul key={pIdx} className="list-disc pl-5 space-y-1 my-1">
+                  <ul key={pIdx} className="list-disc pl-5 space-y-1 my-1 text-text-dark">
                     {items.map((item, iIdx) => (
                       <li key={iIdx} dangerouslySetInnerHTML={{ __html: renderInline(item.replace(/^[-*]\s+/, '')) }} />
                     ))}
                   </ul>
                 );
               }
+
+              // H3 / Major headers
               if (para.trim().startsWith('### ')) {
                 return (
-                  <h4 key={pIdx} className="font-bold text-text-primary text-base mt-3 mb-1">
+                  <h4 key={pIdx} className="font-bold text-primary text-base mt-3 mb-1">
                     {para.replace('### ', '')}
                   </h4>
                 );
               }
+
+              // H4 / Sub-headers
+              if (para.trim().startsWith('#### ')) {
+                return (
+                  <h5 key={pIdx} className="font-bold text-text-dark text-sm mt-2 mb-1">
+                    {para.replace('#### ', '')}
+                  </h5>
+                );
+              }
+
+              // Regular paragraph
               return (
                 <p
                   key={pIdx}
-                  className="text-text-secondary leading-relaxed"
+                  className="text-text-dark leading-relaxed"
                   dangerouslySetInnerHTML={{ __html: renderInline(para) }}
                 />
               );
@@ -131,9 +160,9 @@ function FormattedMessage({ text }) {
 
 function renderInline(str) {
   return str
-    .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-text-primary">$1</strong>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-text-dark">$1</strong>')
     .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
-    .replace(/`([^`]+)`/g, '<code class="bg-surface-muted border border-border px-1.5 py-0.5 rounded text-primary-dark font-mono text-xs">$1</code>');
+    .replace(/`([^`]+)`/g, '<code class="bg-surface border border-border px-1.5 py-0.5 rounded text-primary font-mono text-xs">$1</code>');
 }
 
 export default function CodebaseIntelligence() {
@@ -158,11 +187,42 @@ export default function CodebaseIntelligence() {
   const chatBottomRef = useRef(null);
 
   const quickPrompts = [
-    "Explain the high-level architecture of this codebase",
-    "How is authentication and security implemented?",
-    "What are the main API endpoints and services?",
-    "Suggest 3 architectural improvements for this project",
-    "What technical interview questions could be asked about this repo?"
+    {
+      icon: "🎙️",
+      title: "How to explain in interview?",
+      desc: "3-line direct spoken answer",
+      query: "How can I explain this project simply in an interview? Give me a short, natural 3-sentence spoken answer that I can say directly to the interviewer."
+    },
+    {
+      icon: "⚙️",
+      title: "Key functions & files",
+      desc: "Top functions in 3 simple bullets",
+      query: "What are the main functions and files in this project? Explain in 3 simple bullet points."
+    },
+    {
+      icon: "🤖",
+      title: "AI models & APIs used",
+      desc: "Direct list of models & APIs",
+      query: "Which AI models and APIs are used in this project? Give a simple direct list with what each one does."
+    },
+    {
+      icon: "🚀",
+      title: "Core features",
+      desc: "3-4 main features in simple words",
+      query: "What are the top 3-4 features of this project in simple words?"
+    },
+    {
+      icon: "🔒",
+      title: "Auth & Database",
+      desc: "How login & data works simply",
+      query: "How does authentication and the database work in this project in simple words?"
+    },
+    {
+      icon: "🛠️",
+      title: "How to run locally?",
+      desc: "Step-by-step simple commands",
+      query: "How do I run and test this project locally? Give simple step-by-step commands."
+    },
   ];
 
   const sampleRepos = [
@@ -177,19 +237,38 @@ export default function CodebaseIntelligence() {
   const [syncedProfile, setSyncedProfile] = useState(null);
   const [syncedRepos, setSyncedRepos] = useState([]);
   const [syncLoading, setSyncLoading] = useState(false);
+  const isFetchingReposRef = useRef(false);
+  const currentLoadedUserRef = useRef('');
 
-  const fetchUserRepos = async (usernameToFetch) => {
-    const uname = (usernameToFetch || syncUser).trim();
+  const fetchUserRepos = async (usernameToFetch, shouldBroadcast = false) => {
+    const uname = (usernameToFetch || syncUser).trim().replace(/^@/, '');
     if (!uname) return;
+
+    if (isFetchingReposRef.current) return;
+    isFetchingReposRef.current = true;
     setSyncLoading(true);
+
     try {
-      const res = await axios.get(`http://localhost:5000/api/github/user/${uname}/repos`);
+      if (shouldBroadcast) {
+        try {
+          await updateProfileInDB({ github_username: uname });
+          window.dispatchEvent(new CustomEvent('freshercompass_profile_updated', { detail: uname }));
+        } catch (e) {
+          console.error("Error updating profile in DB:", e);
+        }
+      }
+
+      const res = await axios.get(`http://localhost:5000/api/github/user/${encodeURIComponent(uname)}/repos`, {
+        timeout: 10000,
+      });
       setSyncedProfile(res.data?.data?.profile || null);
       setSyncedRepos(res.data?.data?.repos || []);
+      currentLoadedUserRef.current = uname;
     } catch (err) {
       console.error("Error fetching user repos:", err);
     } finally {
       setSyncLoading(false);
+      isFetchingReposRef.current = false;
     }
   };
 
@@ -249,13 +328,39 @@ export default function CodebaseIntelligence() {
   };
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const userParam = params.get('user');
-    if (userParam) {
-      setSyncUser(userParam);
-      fetchUserRepos(userParam);
-    }
+    const initUser = async () => {
+      const params = new URLSearchParams(location.search);
+      let userParam = params.get('user');
+      if (!userParam) {
+        const prof = await fetchProfileFromDB();
+        userParam = prof?.github_username || '';
+      }
+      if (userParam) {
+        setSyncUser(userParam);
+        fetchUserRepos(userParam, false);
+      }
+    };
+    initUser();
   }, [location.search]);
+
+  // Listen to profile change events from Navbar, TopBar or Dashboard
+  useEffect(() => {
+    const handleSync = (e) => {
+      const u = (e?.detail !== undefined ? e.detail : '').trim().replace(/^@/, '');
+      setSyncUser(u);
+      if (u) {
+        if (currentLoadedUserRef.current !== u) {
+          fetchUserRepos(u, false);
+        }
+      } else {
+        currentLoadedUserRef.current = '';
+        setSyncedProfile(null);
+        setSyncedRepos([]);
+      }
+    };
+    window.addEventListener('freshercompass_profile_updated', handleSync);
+    return () => window.removeEventListener('freshercompass_profile_updated', handleSync);
+  }, []);
 
   // Auto scroll chat to bottom
   useEffect(() => {
@@ -284,7 +389,7 @@ export default function CodebaseIntelligence() {
       setMessages([
         {
           role: 'assistant',
-          content: `### Welcome to Codebase Intelligence for **${data.metadata.name}**!\n\nI have indexed **${data.indexed_chunks_count} code chunks** across **${data.total_files_count} files** from \`${data.metadata.full_name}\`.\n\nYou can ask me anything about the architecture, APIs, dependencies, or request interview talking points grounded in this code.`,
+          content: `### Welcome to Codebase Intelligence for **${data.metadata.name}**!\n\nI have indexed **${data.indexed_chunks_count} code chunks** across **${data.total_files_count} files** from \`${data.metadata.full_name}\`.\n\nYou can ask me **anything** about this codebase and get instant, direct answers grounded in actual code:\n- 🎙️ **How to explain this project in an interview** (elevator pitch & key challenges)\n- ⚙️ **Key functions, modules, and architecture flow**\n- 🤖 **AI models, vector search, embeddings, or external APIs**\n- 🚀 **Core features, capabilities, and dependencies**\n- 🛠️ **How to run, test, and debug locally**\n\nClick any suggested question or ask your own question below!`,
           citations: []
         }
       ]);
@@ -352,41 +457,55 @@ export default function CodebaseIntelligence() {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
+  const handleClearChat = () => {
+    if (analysisData) {
+      setMessages([
+        {
+          role: 'assistant',
+          content: `### Codebase AI Ready for **${analysisData.metadata.name}**\n\nAsk me **anything** about this codebase (how to explain in an interview, key functions, AI models, or features) to get simple, direct answers grounded in actual code.`,
+          citations: []
+        }
+      ]);
+    } else {
+      setMessages([]);
+    }
+  };
+
   return (
-    <div className="pt-24 pb-20 min-h-screen bg-slate-50/70">
+    <div className="pt-24 pb-20 min-h-screen bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Header Title */}
-        <div className="text-center max-w-3xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200/60 mb-3 shadow-xs">
-            <Sparkles className="h-3.5 w-3.5 text-blue-600" /> Vector Codebase RAG & Developer Intelligence
+        {/* Module Header Title & Value Prop */}
+        <div className="text-center max-w-3xl mx-auto mb-8">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-primary-subtle text-primary border border-primary/20 mb-3 shadow-2xs">
+            <Sparkles className="h-3.5 w-3.5 text-primary" /> Vector Codebase Intelligence & RAG
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-primary tracking-tight">
             Codebase & GitHub Intelligence
           </h1>
-          <p className="mt-2.5 text-sm sm:text-base text-slate-600 leading-relaxed">
-            Ingest repositories, chat with vector-grounded RAG, inspect automated code health metrics, and generate production READMEs.
+          <p className="mt-2 text-sm sm:text-base text-text-body leading-relaxed">
+            Connect repositories, chat with vector-grounded AI for interview prep, inspect code health metrics, and generate production documentation.
           </p>
         </div>
 
-        {/* Ingestion Search Box */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-sm mb-8 transition-all hover:border-blue-500/30">
+        {/* Ingestion & Repository Bar */}
+        <div className="bg-surface rounded-card border border-border p-4 sm:p-5 mb-8 shadow-2xs">
           <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
             <div className="relative flex-grow">
-              <Github className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+              <Github className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
               <input
                 type="text"
                 value={repoInput}
                 onChange={(e) => setRepoInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
                 placeholder="Enter GitHub URL or owner/repo (e.g. sanjayjakhar/FreshersCompass)"
-                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 hover:bg-slate-100/60 focus:bg-white rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-900 text-sm font-mono placeholder:font-sans transition-all"
+                className="w-full pl-12 pr-4 py-3 bg-white rounded-card border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-dark text-sm font-mono placeholder:font-sans transition-all"
               />
             </div>
             <button
               onClick={() => handleAnalyze()}
               disabled={loading || !repoInput.trim()}
-              className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-7 py-3.5 rounded-2xl font-bold text-xs transition-all shadow-md shadow-blue-500/25 shrink-0 active:scale-95"
+              className="btn-accent px-6 py-3 font-semibold text-xs tracking-wide shrink-0 disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <>
@@ -403,9 +522,9 @@ export default function CodebaseIntelligence() {
           </div>
 
           {/* Quick sample chips & Profile Sync */}
-          <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3.5 border-t border-slate-100 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3.5 border-t border-border text-xs text-text-body">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-slate-400">Try sample:</span>
+              <span className="font-medium text-text-muted">Try sample:</span>
               {sampleRepos.map((s, idx) => (
                 <button
                   key={idx}
@@ -414,7 +533,7 @@ export default function CodebaseIntelligence() {
                     handleAnalyze(s.url);
                   }}
                   disabled={loading}
-                  className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 transition-colors text-[11px] font-medium"
+                  className="px-3 py-1 rounded-card bg-white hover:bg-primary-subtle hover:text-primary border border-border text-text-dark transition-colors text-[11px] font-medium cursor-pointer"
                 >
                   {s.label}
                 </button>
@@ -428,81 +547,124 @@ export default function CodebaseIntelligence() {
                 value={syncUser}
                 onChange={(e) => setSyncUser(e.target.value)}
                 placeholder="github username"
-                className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono w-36 focus:outline-none focus:border-blue-500 text-slate-800"
-                onKeyDown={(e) => e.key === 'Enter' && fetchUserRepos()}
+                className="px-3 py-1.5 rounded-card bg-white border border-border text-xs font-mono w-36 focus:outline-none focus:border-primary text-text-dark"
+                onKeyDown={(e) => e.key === 'Enter' && !syncLoading && fetchUserRepos(syncUser, true)}
               />
               <button
-                onClick={() => fetchUserRepos()}
+                onClick={() => fetchUserRepos(syncUser, true)}
                 disabled={syncLoading || !syncUser.trim()}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95"
+                className="btn-primary px-3.5 py-1.5 rounded-card text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {syncLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
-                <span>Sync Repos</span>
+                <span>{syncLoading ? 'Syncing...' : 'Sync Repos'}</span>
               </button>
             </div>
           </div>
 
+          {/* Quickstart 1-Click Card if no repo analyzed yet */}
+          {!analysisData && !loading && (
+            <div className="mt-4 p-4 rounded-card bg-white border border-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-up shadow-2xs">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-card bg-primary-subtle text-primary flex items-center justify-center shrink-0">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-text-dark flex items-center gap-2">
+                    Active Codebase: <span className="text-primary font-mono font-semibold">sanjayjakhar/FreshersCompass</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary-subtle text-secondary font-bold">Fast Local Index</span>
+                  </h4>
+                  <p className="text-xs text-text-body mt-0.5">
+                    Explore RAG vector chat, code health audit, recruiter resume pitch bullets, and automated README generators.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setRepoInput('sanjayjakhar/FreshersCompass');
+                  handleAnalyze('sanjayjakhar/FreshersCompass');
+                }}
+                className="btn-primary px-4 py-2.5 rounded-card text-xs font-semibold flex items-center gap-2 shrink-0 cursor-pointer"
+              >
+                <Rocket className="h-4 w-4" />
+                <span>1-Click Analyze</span>
+              </button>
+            </div>
+          )}
+
           {/* Synced User Repositories Showcase */}
           {syncedProfile && syncedRepos.length > 0 && (
-            <div className="mt-5 pt-4 border-t border-slate-100 animate-fade-up">
+            <div className="mt-4 pt-4 border-t border-border animate-fade-up">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2.5">
                   <img
                     src={syncedProfile.avatar_url}
                     alt={syncedProfile.login}
-                    className="w-7 h-7 rounded-full border border-slate-200"
+                    className="w-7 h-7 rounded-full border border-border"
                   />
-                  <span className="text-xs font-bold text-slate-900">
+                  <span className="text-xs font-bold text-text-dark">
                     {syncedProfile.name || syncedProfile.login}
                   </span>
-                  <span className="text-[11px] text-slate-400">
-                    ({syncedRepos.length} public repos)
+                  <span className="text-[11px] text-text-muted">
+                    ({syncedRepos.length} public repos connected)
                   </span>
                 </div>
-                <span className="text-[11px] text-slate-400 font-medium">Click any repo to inspect & chat:</span>
+                <span className="text-[11px] text-text-muted font-medium">Click any repo to switch & analyze:</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-96 overflow-y-auto pr-1">
-                {syncedRepos.map((r, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => {
-                      setRepoInput(r.full_name);
-                      handleAnalyze(r.full_name);
-                    }}
-                    className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 hover:border-blue-500/40 hover:bg-blue-50/20 transition-all duration-200 cursor-pointer group flex flex-col justify-between shadow-2xs hover:-translate-y-0.5"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <h4 className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors truncate" title={r.name}>
-                          {r.name}
-                        </h4>
-                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-500 font-mono shrink-0">
-                          {r.language}
-                        </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-72 overflow-y-auto pr-1">
+                {syncedRepos.map((r, idx) => {
+                  const isSelected = analysisData?.metadata?.full_name?.toLowerCase() === r.full_name.toLowerCase();
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        setRepoInput(r.full_name);
+                        handleAnalyze(r.full_name);
+                      }}
+                      className={`p-3.5 rounded-card transition-all duration-200 cursor-pointer group flex flex-col justify-between shadow-2xs ${
+                        isSelected
+                          ? 'bg-white border-2 border-primary shadow-xs'
+                          : 'bg-white border border-border hover:border-primary/50'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <h4 className={`text-xs font-bold truncate transition-colors ${isSelected ? 'text-primary' : 'text-text-dark group-hover:text-primary'}`} title={r.name}>
+                            {r.name}
+                          </h4>
+                          <span className="text-[10px] px-2 py-0.5 rounded-md bg-surface border border-border text-text-body font-mono shrink-0">
+                            {r.language || 'Code'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-text-body line-clamp-2 leading-relaxed">
+                          {r.description || 'No description provided'}
+                        </p>
                       </div>
-                      <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                        {r.description}
-                      </p>
-                    </div>
 
-                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] text-slate-400">
-                      <span className="flex items-center gap-1">
-                        <Star className="h-3 w-3 text-amber-500 fill-amber-500/20" /> {r.stars}
-                      </span>
-                      <span className="text-blue-600 font-semibold group-hover:underline flex items-center gap-0.5">
-                        Inspect <ArrowRight className="h-2.5 w-2.5" />
-                      </span>
+                      <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-border text-[10px] text-text-muted">
+                        <span className="flex items-center gap-1">
+                          <Star className="h-3 w-3 text-warning fill-warning/20" /> {r.stars}
+                        </span>
+                        {isSelected ? (
+                          <span className="text-secondary font-bold flex items-center gap-1 text-[11px]">
+                            <CheckCircle2 className="h-3 w-3 text-secondary" /> Active Repo
+                          </span>
+                        ) : (
+                          <span className="text-primary font-semibold group-hover:underline flex items-center gap-0.5">
+                            Analyze <ArrowRight className="h-2.5 w-2.5" />
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
 
           {/* Error Message */}
           {error && (
-            <div className="mt-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+            <div className="mt-4 p-3.5 rounded-card bg-danger-subtle border border-danger/30 text-danger text-xs flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -511,118 +673,211 @@ export default function CodebaseIntelligence() {
 
         {/* Loading Progress Skeleton */}
         {loading && (
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-10 text-center animate-pulse shadow-sm mb-8">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-4 text-blue-600">
+          <div className="bg-surface rounded-card border border-border p-10 text-center animate-pulse shadow-2xs mb-8">
+            <div className="w-12 h-12 rounded-card bg-primary-subtle flex items-center justify-center mx-auto mb-4 text-primary">
               <RefreshCw className="h-6 w-6 animate-spin" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Ingesting and Vectorizing Codebase</h3>
-            <p className="text-sm text-slate-500 max-w-md mx-auto">
-              Extracting file trees, computing health metrics, generating vector embeddings, and priming Gemini for RAG queries...
+            <h3 className="text-lg font-bold text-primary mb-2">Ingesting and Vectorizing Codebase</h3>
+            <p className="text-sm text-text-body max-w-md mx-auto">
+              Extracting file trees, computing code health metrics, generating vector embeddings, and priming Gemini for RAG queries...
             </p>
           </div>
         )}
 
-        {/* Results Container */}
+        {/* Results Container with Clear Feature Navigation */}
         {analysisData && !loading && (
-          <div className="space-y-8 animate-fade-up">
+          <div className="space-y-6 animate-fade-up">
 
-            {/* Repository Info Banner */}
-            <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                    {analysisData.metadata.name}
-                  </h2>
-                  <a
-                    href={analysisData.metadata.html_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-slate-400 hover:text-blue-600 transition-colors inline-flex items-center gap-1 text-xs"
-                  >
-                    View on GitHub <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-                <p className="text-slate-600 text-sm mt-1 max-w-2xl">
-                  {analysisData.metadata.description}
-                </p>
-
-                {/* Stats Row */}
-                <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-slate-500">
-                  <span className="flex items-center gap-1">
-                    <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500/20" />
-                    <strong className="text-slate-900">{analysisData.metadata.stars}</strong> stars
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <GitFork className="h-3.5 w-3.5 text-slate-400" />
-                    <strong className="text-slate-900">{analysisData.metadata.forks}</strong> forks
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <GitBranch className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-slate-800 font-mono">{analysisData.metadata.default_branch}</span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <FileCode className="h-3.5 w-3.5 text-slate-400" />
-                    <strong className="text-slate-900">{analysisData.total_files_count}</strong> files analyzed
-                  </span>
-                </div>
-              </div>
-
-              {/* Navigation Tabs (Smooth Pill Bar) */}
-              <div className="flex items-center bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/80 self-start md:self-auto shadow-2xs">
+            {/* Feature Tabs Navigation Bar */}
+            <div className="bg-surface rounded-card border border-border p-2.5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   onClick={() => setActiveTab('chat')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'chat'
-                      ? 'bg-white text-blue-600 shadow-sm font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white text-primary border border-border shadow-xs font-bold'
+                      : 'text-text-body hover:text-primary hover:bg-white/60'
                   }`}
                 >
-                  <Bot className="h-3.5 w-3.5" />
-                  <span>RAG Chat</span>
+                  <Bot className="h-4 w-4 text-primary" />
+                  <span>Codebase AI Chat</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[9px] font-extrabold tracking-wide">PRIMARY</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('health')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'health'
-                      ? 'bg-white text-blue-600 shadow-sm font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white text-primary border border-border shadow-xs font-bold'
+                      : 'text-text-body hover:text-primary hover:bg-white/60'
                   }`}
                 >
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  <span>Code Health</span>
+                  <ShieldCheck className="h-4 w-4 text-secondary" />
+                  <span>Code Health & Audit</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('pitch')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'pitch'
-                      ? 'bg-white text-blue-600 shadow-sm font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white text-primary border border-border shadow-xs font-bold'
+                      : 'text-text-body hover:text-primary hover:bg-white/60'
                   }`}
                 >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>Recruiter Pitch</span>
+                  <Sparkles className="h-4 w-4 text-warning" />
+                  <span>Recruiter Pitch (XYZ)</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('readme')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'readme'
-                      ? 'bg-white text-blue-600 shadow-sm font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white text-primary border border-border shadow-xs font-bold'
+                      : 'text-text-body hover:text-primary hover:bg-white/60'
                   }`}
                 >
-                  <FileText className="h-3.5 w-3.5" />
+                  <FileText className="h-4 w-4" />
                   <span>README Studio</span>
                 </button>
               </div>
+
+              {/* Quick Health Summary Pill */}
+              <div className="flex items-center gap-2 text-xs text-text-body px-3 py-1.5 rounded-card bg-white border border-border self-start md:self-auto">
+                <span className="w-2 h-2 rounded-full bg-secondary" />
+                <span className="font-mono text-text-dark font-medium">{analysisData.metadata.name}</span>
+                <span className="text-text-muted">|</span>
+                <span className="font-semibold text-secondary">{analysisData.health.overall_score}/100 Readiness</span>
+              </div>
             </div>
 
-            {/* TAB 1: RAG CHAT */}
+            {/* TAB 1: CODEBASE AI CHAT (SPLIT-SCREEN LAYOUT) */}
             {activeTab === 'chat' && (
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 
-                {/* Chat Column (3 cols) */}
-                <div className="lg:col-span-3 bg-surface rounded-2xl border border-border shadow-sm flex flex-col h-[650px] overflow-hidden">
+                {/* LEFT PANEL (Col 4 of 12): Repository Navigator & Suggested Topics */}
+                <div className="lg:col-span-4 space-y-4">
                   
+                  {/* 1. Active Repository Info Card */}
+                  <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-bold text-text-dark text-sm truncate flex items-center gap-1.5">
+                        <Github className="h-4 w-4 text-text-muted" />
+                        <span className="truncate">{analysisData.metadata.name}</span>
+                      </h3>
+                      <a
+                        href={analysisData.metadata.html_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline text-xs inline-flex items-center gap-0.5 shrink-0"
+                      >
+                        GitHub <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <p className="text-text-body text-xs mt-1.5 line-clamp-2">
+                      {analysisData.metadata.description || 'Repository connected for code intelligence.'}
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border text-xs">
+                      <div className="flex items-center gap-1.5 text-text-body">
+                        <Star className="h-3.5 w-3.5 text-warning fill-warning/20" />
+                        <span className="font-medium text-text-dark">{analysisData.metadata.stars}</span> stars
+                      </div>
+                      <div className="flex items-center gap-1.5 text-text-body">
+                        <GitFork className="h-3.5 w-3.5 text-text-muted" />
+                        <span className="font-medium text-text-dark">{analysisData.metadata.forks}</span> forks
+                      </div>
+                      <div className="flex items-center gap-1.5 text-text-body">
+                        <GitBranch className="h-3.5 w-3.5 text-text-muted" />
+                        <span className="font-mono text-text-dark text-[11px] truncate">{analysisData.metadata.default_branch}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-text-body">
+                        <FileCode className="h-3.5 w-3.5 text-text-muted" />
+                        <span className="font-medium text-text-dark">{analysisData.total_files_count}</span> files
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. One-Click Suggested Spoken Questions */}
+                  <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs font-bold text-text-dark uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-primary" /> Suggested Questions
+                      </h3>
+                      <span className="text-[10px] text-text-muted">One-click ask</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {quickPrompts.map((q, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleSendMessage(q.query)}
+                          disabled={chatLoading}
+                          className="w-full text-left p-2.5 rounded-card bg-white border border-border hover:border-primary/50 hover:bg-primary-subtle/20 transition-all flex items-start gap-2.5 group cursor-pointer disabled:opacity-50 shadow-2xs"
+                        >
+                          <span className="text-base shrink-0 leading-none mt-0.5">{q.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-semibold text-text-dark group-hover:text-primary transition-colors truncate">
+                              {q.title}
+                            </div>
+                            <div className="text-[11px] text-text-body truncate mt-0.5">
+                              {q.desc}
+                            </div>
+                          </div>
+                          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-text-muted group-hover:text-primary group-hover:translate-x-0.5 transition-all mt-0.5" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 3. Sample Code Files Analyzed */}
+                  <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
+                    <h3 className="text-xs font-bold text-text-dark uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                      <FileCode className="h-3.5 w-3.5 text-primary" /> Key Code Files
+                    </h3>
+                    <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+                      {analysisData.files_sample.slice(0, 8).map((f, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => handleSendMessage(`Explain the purpose and key functions of file ${f}`)}
+                          className="text-[11.5px] font-mono text-text-body truncate p-1.5 rounded-card hover:bg-white hover:text-primary hover:border hover:border-border cursor-pointer transition-colors flex items-center gap-1.5"
+                          title={f}
+                        >
+                          <FileCode className="h-3 w-3 shrink-0 text-text-muted" />
+                          <span className="truncate">{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* RIGHT PANEL (Col 8 of 12): Conversational Codebase Chat */}
+                <div className="lg:col-span-8 bg-surface rounded-card border border-border flex flex-col h-[700px] overflow-hidden shadow-2xs">
+                  
+                  {/* Chat Top Status Bar */}
+                  <div className="px-5 py-3.5 bg-white border-b border-border flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-secondary animate-pulse" />
+                      <span className="text-xs font-bold text-text-dark">
+                        Codebase AI Assistant
+                      </span>
+                      <span className="text-[11px] text-text-muted">
+                        • Grounded in <strong className="text-primary font-mono">{analysisData.metadata.name}</strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] px-2 py-0.5 rounded-md bg-surface border border-border text-text-dark font-mono font-medium">
+                        {analysisData.indexed_chunks_count} chunks indexed
+                      </span>
+                      <button
+                        onClick={handleClearChat}
+                        className="text-text-muted hover:text-danger text-xs inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Clear conversation"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Reset</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Chat Message Stream */}
                   <div className="flex-grow p-5 overflow-y-auto space-y-4">
                     {messages.map((m, idx) => (
@@ -633,16 +888,16 @@ export default function CodebaseIntelligence() {
                         }`}
                       >
                         {m.role === 'assistant' && (
-                          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0 mt-1">
+                          <div className="w-8 h-8 rounded-card bg-white border border-border flex items-center justify-center text-primary shrink-0 mt-1 shadow-2xs">
                             <Bot className="h-4 w-4" />
                           </div>
                         )}
 
                         <div
-                          className={`max-w-[85%] rounded-2xl p-4 text-sm ${
+                          className={`text-sm ${
                             m.role === 'user'
-                              ? 'bg-primary text-surface rounded-tr-none'
-                              : 'bg-surface-muted border border-border text-text-primary rounded-tl-none'
+                              ? 'max-w-[80%] rounded-card rounded-tr-none p-3.5 bg-primary text-white shadow-2xs leading-relaxed'
+                              : 'max-w-[88%] rounded-card rounded-tl-none p-4 sm:p-5 bg-white border border-border text-text-dark shadow-2xs leading-relaxed'
                           }`}
                         >
                           {m.role === 'user' ? (
@@ -653,8 +908,8 @@ export default function CodebaseIntelligence() {
 
                               {/* Citations Box */}
                               {m.citations && m.citations.length > 0 && (
-                                <div className="mt-3 pt-3 border-t border-border/50">
-                                  <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+                                <div className="mt-3.5 pt-3 border-t border-border">
+                                  <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider block mb-1.5 flex items-center gap-1">
                                     <FileCode className="h-3 w-3 text-secondary" /> Grounded Source Citations
                                   </span>
                                   <div className="flex flex-wrap gap-1.5">
@@ -662,7 +917,7 @@ export default function CodebaseIntelligence() {
                                       <span
                                         key={cIdx}
                                         title={`Score: ${cite.score}\nPreview: ${cite.snippet}`}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border text-[11px] font-mono text-text-secondary hover:border-primary/50 transition-colors"
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface border border-border text-[11px] font-mono text-text-dark hover:border-primary/40 hover:text-primary transition-colors"
                                       >
                                         <span className="text-primary font-medium">{cite.file}</span>
                                         <span className="text-text-muted">:{cite.lines}</span>
@@ -676,7 +931,7 @@ export default function CodebaseIntelligence() {
                         </div>
 
                         {m.role === 'user' && (
-                          <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center text-secondary shrink-0 mt-1">
+                          <div className="w-8 h-8 rounded-card bg-primary-subtle text-primary border border-primary/20 flex items-center justify-center shrink-0 mt-1">
                             <User className="h-4 w-4" />
                           </div>
                         )}
@@ -685,20 +940,39 @@ export default function CodebaseIntelligence() {
 
                     {chatLoading && (
                       <div className="flex gap-3 justify-start animate-fade-up">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0 mt-1">
+                        <div className="w-8 h-8 rounded-card bg-white border border-border flex items-center justify-center text-primary shrink-0 mt-1 shadow-2xs">
                           <Bot className="h-4 w-4" />
                         </div>
-                        <div className="bg-surface-muted border border-border rounded-2xl rounded-tl-none p-4 text-xs text-text-secondary flex items-center gap-2">
+                        <div className="bg-white border border-border rounded-card rounded-tl-none p-4 text-xs text-text-body flex items-center gap-2 shadow-2xs">
                           <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary" />
-                          <span>Searching codebase vector embeddings & synthesizing answer...</span>
+                          <span>Searching codebase vector embeddings & synthesizing direct answer...</span>
                         </div>
                       </div>
                     )}
                     <div ref={chatBottomRef} />
                   </div>
 
-                  {/* Input Box */}
-                  <div className="p-4 border-t border-border bg-surface">
+                  {/* Quick Ask Suggestion Chips Bar */}
+                  <div className="px-4 py-2.5 bg-surface border-t border-border flex items-center gap-2 overflow-x-auto no-scrollbar">
+                    <span className="text-[11px] font-bold text-text-muted shrink-0 flex items-center gap-1">
+                      <Sparkles className="h-3 w-3 text-primary" /> Quick Ask:
+                    </span>
+                    {quickPrompts.map((q, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSendMessage(q.query)}
+                        disabled={chatLoading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-border text-xs font-medium text-text-dark hover:text-primary hover:border-primary/40 shadow-2xs whitespace-nowrap transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                      >
+                        <span>{q.icon}</span>
+                        <span>{q.title}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Chat Input Bar */}
+                  <div className="p-4 bg-white border-t border-border">
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -710,14 +984,14 @@ export default function CodebaseIntelligence() {
                         type="text"
                         value={inputQuery}
                         onChange={(e) => setInputQuery(e.target.value)}
-                        placeholder="Ask anything about this repo (e.g. 'How does routing work?')..."
+                        placeholder="Ask anything about this repo (e.g. 'How to explain in interview?', 'Functions & APIs', 'AI models')..."
                         disabled={chatLoading}
-                        className="flex-grow px-4 py-2.5 bg-surface-muted rounded-xl border border-border text-text-primary text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        className="flex-grow px-4 py-2.5 bg-surface/50 rounded-card border border-border text-text-dark text-sm placeholder:text-text-muted focus:outline-none focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                       />
                       <button
                         type="submit"
                         disabled={chatLoading || !inputQuery.trim()}
-                        className="bg-primary hover:bg-primary-dark disabled:opacity-50 text-surface p-2.5 rounded-xl transition-colors shadow-md shadow-primary/20 shrink-0"
+                        className="btn-primary p-2.5 rounded-card shrink-0 cursor-pointer disabled:opacity-40"
                       >
                         <Send className="h-4 w-4" />
                       </button>
@@ -725,121 +999,79 @@ export default function CodebaseIntelligence() {
                   </div>
                 </div>
 
-                {/* Sidebar Quick Prompts & Key Files (1 col) */}
-                <div className="space-y-6">
-                  {/* Quick Prompts */}
-                  <div className="bg-surface rounded-2xl border border-border p-5 shadow-sm">
-                    <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5 text-primary" /> Suggested Questions
-                    </h3>
-                    <div className="space-y-2">
-                      {quickPrompts.map((q, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleSendMessage(q)}
-                          disabled={chatLoading}
-                          className="w-full text-left p-2.5 rounded-xl bg-surface-muted border border-border/70 text-xs text-text-secondary hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-all flex items-center justify-between group"
-                        >
-                          <span className="line-clamp-2">{q}</span>
-                          <ArrowRight className="h-3 w-3 shrink-0 text-text-muted group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Sample Files Analyzed */}
-                  <div className="bg-surface rounded-2xl border border-border p-5 shadow-sm">
-                    <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                      <FileCode className="h-3.5 w-3.5 text-secondary" /> Sample Key Files
-                    </h3>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                      {analysisData.files_sample.slice(0, 8).map((f, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => handleSendMessage(`Explain the purpose and logic of file ${f}`)}
-                          className="text-[11px] font-mono text-text-secondary truncate p-1.5 rounded-lg hover:bg-surface-muted cursor-pointer hover:text-primary transition-colors flex items-center gap-1.5"
-                        >
-                          <FileCode className="h-3 w-3 shrink-0 text-text-muted" />
-                          <span className="truncate">{f}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
               </div>
             )}
 
-            {/* TAB 2: CODE HEALTH */}
+            {/* TAB 2: CODE HEALTH & AUDIT */}
             {activeTab === 'health' && (
               <div className="space-y-6 animate-fade-up">
                 
                 {/* Scorecards Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   {/* Overall Code Health */}
-                  <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm flex flex-col items-center justify-center text-center">
+                  <div className="bg-surface rounded-card border border-border p-6 text-center shadow-2xs flex flex-col items-center justify-center">
                     <ScoreRing
                       score={analysisData.health.overall_score}
                       size={120}
                       strokeWidth={10}
                     />
-                    <h3 className="font-bold text-text-primary text-base mt-3">Code Health</h3>
-                    <p className="text-xs text-text-muted mt-0.5">Recruiter Readiness Score</p>
+                    <h3 className="font-bold text-text-dark text-base mt-3">Code Health</h3>
+                    <p className="text-xs text-text-body mt-0.5">Recruiter Readiness Score</p>
                   </div>
 
                   {/* Documentation */}
-                  <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm flex flex-col items-center justify-center text-center">
+                  <div className="bg-surface rounded-card border border-border p-6 text-center shadow-2xs flex flex-col items-center justify-center">
                     <ScoreRing
                       score={analysisData.health.doc_score}
                       size={100}
                       strokeWidth={8}
                     />
-                    <h3 className="font-bold text-text-primary text-sm mt-3 flex items-center gap-1.5">
+                    <h3 className="font-bold text-text-dark text-sm mt-3 flex items-center gap-1.5">
                       <BookOpen className="h-4 w-4 text-primary" /> Documentation
                     </h3>
-                    <p className="text-xs text-text-muted mt-0.5">README & Guides</p>
+                    <p className="text-xs text-text-body mt-0.5">README & Guides</p>
                   </div>
 
                   {/* Architecture */}
-                  <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm flex flex-col items-center justify-center text-center">
+                  <div className="bg-surface rounded-card border border-border p-6 text-center shadow-2xs flex flex-col items-center justify-center">
                     <ScoreRing
                       score={analysisData.health.arch_score}
                       size={100}
                       strokeWidth={8}
                     />
-                    <h3 className="font-bold text-text-primary text-sm mt-3 flex items-center gap-1.5">
+                    <h3 className="font-bold text-text-dark text-sm mt-3 flex items-center gap-1.5">
                       <Layers className="h-4 w-4 text-secondary" /> Architecture
                     </h3>
-                    <p className="text-xs text-text-muted mt-0.5">Modularity & Structure</p>
+                    <p className="text-xs text-text-body mt-0.5">Modularity & Structure</p>
                   </div>
 
                   {/* Testing & Practices */}
-                  <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm flex flex-col items-center justify-center text-center">
+                  <div className="bg-surface rounded-card border border-border p-6 text-center shadow-2xs flex flex-col items-center justify-center">
                     <ScoreRing
                       score={analysisData.health.test_score}
                       size={100}
                       strokeWidth={8}
                     />
-                    <h3 className="font-bold text-text-primary text-sm mt-3 flex items-center gap-1.5">
-                      <ShieldCheck className="h-4 w-4 text-accent" /> Best Practices
+                    <h3 className="font-bold text-text-dark text-sm mt-3 flex items-center gap-1.5">
+                      <ShieldCheck className="h-4 w-4 text-primary" /> Best Practices
                     </h3>
-                    <p className="text-xs text-text-muted mt-0.5">Testing, CI/CD & Linting</p>
+                    <p className="text-xs text-text-body mt-0.5">Testing, CI/CD & Linting</p>
                   </div>
                 </div>
 
                 {/* Tech Stack & Detailed Insights */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   
                   {/* Tech Stack Badge Panel */}
-                  <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
-                    <h3 className="text-sm font-bold text-text-primary mb-4 flex items-center gap-2">
+                  <div className="bg-surface rounded-card border border-border p-5 shadow-2xs">
+                    <h3 className="text-sm font-bold text-text-dark mb-3.5 flex items-center gap-2">
                       <Code2 className="h-4 w-4 text-primary" /> Detected Tech Stack
                     </h3>
                     <div className="flex flex-wrap gap-2">
                       {analysisData.health.tech_stack.map((t, idx) => (
                         <span
                           key={idx}
-                          className="px-3 py-1 rounded-lg bg-primary/10 text-primary-dark border border-primary/20 text-xs font-semibold"
+                          className="px-3 py-1 rounded-card bg-white text-primary border border-border text-xs font-semibold shadow-2xs"
                         >
                           {t}
                         </span>
@@ -848,14 +1080,14 @@ export default function CodebaseIntelligence() {
                   </div>
 
                   {/* Strengths */}
-                  <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
-                    <h3 className="text-sm font-bold text-text-primary mb-4 flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-secondary" /> Key Strengths
+                  <div className="bg-surface rounded-card border border-border p-5 shadow-2xs">
+                    <h3 className="text-sm font-bold text-text-dark mb-3.5 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-success" /> Key Strengths
                     </h3>
-                    <ul className="space-y-2.5">
+                    <ul className="space-y-2">
                       {analysisData.health.strengths.map((str, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-xs text-text-secondary">
-                          <CheckCircle2 className="h-4 w-4 text-secondary shrink-0 mt-0.5" />
+                        <li key={idx} className="flex items-start gap-2 text-xs text-text-body">
+                          <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />
                           <span>{str}</span>
                         </li>
                       ))}
@@ -863,13 +1095,13 @@ export default function CodebaseIntelligence() {
                   </div>
 
                   {/* Areas for Improvement */}
-                  <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
-                    <h3 className="text-sm font-bold text-text-primary mb-4 flex items-center gap-2">
+                  <div className="bg-surface rounded-card border border-border p-5 shadow-2xs">
+                    <h3 className="text-sm font-bold text-text-dark mb-3.5 flex items-center gap-2">
                       <AlertCircle className="h-4 w-4 text-warning" /> Actionable Improvements
                     </h3>
-                    <ul className="space-y-2.5">
+                    <ul className="space-y-2">
                       {analysisData.health.improvements.map((imp, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-xs text-text-secondary">
+                        <li key={idx} className="flex items-start gap-2 text-xs text-text-body">
                           <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                           <span>{imp}</span>
                         </li>
@@ -884,32 +1116,32 @@ export default function CodebaseIntelligence() {
 
             {/* TAB 3: RECRUITER PITCH */}
             {activeTab === 'pitch' && (
-              <div className="bg-surface rounded-2xl border border-border p-8 shadow-sm space-y-6 animate-fade-up">
+              <div className="bg-surface rounded-card border border-border p-6 sm:p-7 shadow-2xs space-y-6 animate-fade-up">
                 <div>
-                  <h3 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                  <h3 className="text-xl font-bold text-primary flex items-center gap-2">
                     <Sparkles className="h-5 w-5 text-primary" /> Recruiter Pitch & Resume Bullets
                   </h3>
-                  <p className="text-sm text-text-secondary mt-1">
-                    AI-generated bullet points formatted according to Google's XYZ formula (<em>Accomplished [X] as measured by [Y], by doing [Z]</em>). Ready to paste directly into your resume or LinkedIn experience!
+                  <p className="text-sm text-text-body mt-1">
+                    AI-generated bullet points formatted according to Google's XYZ formula (<em>Accomplished [X] as measured by [Y], by doing [Z]</em>). Ready to paste directly into your resume!
                   </p>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3.5">
                   {analysisData.recruiter_pitch.map((bullet, idx) => (
                     <div
                       key={idx}
-                      className="p-4 rounded-xl bg-surface-muted border border-border flex items-start justify-between gap-4 group hover:border-primary/30 transition-all"
+                      className="p-4 rounded-card bg-white border border-border flex items-start justify-between gap-4 group hover:border-primary/40 transition-all shadow-2xs"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                        <div className="w-6 h-6 rounded-full bg-primary-subtle text-primary font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
                           {idx + 1}
                         </div>
-                        <p className="text-sm text-text-primary leading-relaxed">{bullet}</p>
+                        <p className="text-sm text-text-dark leading-relaxed">{bullet}</p>
                       </div>
 
                       <button
                         onClick={() => handleCopyPitch(bullet, idx)}
-                        className="px-3 py-1.5 rounded-lg bg-surface border border-border hover:border-primary/50 text-text-secondary hover:text-primary transition-all text-xs flex items-center gap-1.5 shrink-0"
+                        className="px-3 py-1.5 rounded-card bg-surface border border-border hover:border-primary/50 text-text-dark hover:text-primary transition-all text-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
                       >
                         {copiedIndex === idx ? (
                           <>
@@ -928,20 +1160,20 @@ export default function CodebaseIntelligence() {
                 </div>
 
                 {/* Interview Talking Tips */}
-                <div className="mt-8 p-6 rounded-2xl bg-secondary/5 border border-secondary/20">
-                  <h4 className="font-bold text-secondary-dark text-sm flex items-center gap-2 mb-2">
-                    <Terminal className="h-4 w-4" /> Technical Interview Talking Points
+                <div className="p-5 rounded-card bg-white border border-border">
+                  <h4 className="font-bold text-primary text-sm flex items-center gap-2 mb-2">
+                    <Terminal className="h-4 w-4 text-primary" /> Technical Interview Talking Points
                   </h4>
-                  <p className="text-xs text-text-secondary leading-relaxed mb-3">
+                  <p className="text-xs text-text-body leading-relaxed mb-3">
                     When discussing this project with interviewers, emphasize the architectural choices:
                   </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-text-secondary">
-                    <div className="p-3 rounded-xl bg-surface border border-secondary/15">
-                      <strong className="text-text-primary block mb-1">Architecture & Separation:</strong>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-text-body">
+                    <div className="p-3.5 rounded-card bg-surface border border-border">
+                      <strong className="text-text-dark block mb-1">Architecture & Separation:</strong>
                       Highlight how modular boundaries and clean code separation were maintained throughout the service layers.
                     </div>
-                    <div className="p-3 rounded-xl bg-surface border border-secondary/15">
-                      <strong className="text-text-primary block mb-1">Stack Selection:</strong>
+                    <div className="p-3.5 rounded-card bg-surface border border-border">
+                      <strong className="text-text-dark block mb-1">Stack Selection:</strong>
                       Explain the reasoning behind utilizing {analysisData.health.tech_stack.slice(0, 3).join(', ')} for scalable performance.
                     </div>
                   </div>
@@ -952,27 +1184,27 @@ export default function CodebaseIntelligence() {
 
             {/* TAB 4: README STUDIO */}
             {activeTab === 'readme' && (
-              <div className="space-y-8 animate-fade-up">
+              <div className="space-y-6 animate-fade-up">
                 
                 {/* 1. Production Project README Generator */}
-                <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
+                <div className="bg-surface rounded-card border border-border p-6 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <FileCode className="h-5 w-5 text-primary" />
-                        <h3 className="text-base font-bold text-text-primary">
+                        <h3 className="text-base font-bold text-text-dark">
                           Production Project README Generator
                         </h3>
                       </div>
-                      <p className="text-xs text-text-secondary">
-                        Transform <strong>{analysisData.metadata.name}</strong> into an open-source standard README with badges, architecture overview, installation guide, and API table.
+                      <p className="text-xs text-text-body">
+                        Transform <strong>{analysisData.metadata.name}</strong> into an open-source standard README with badges, architecture overview, and quickstart guide.
                       </p>
                     </div>
 
                     <button
                       onClick={handleGenerateProjectReadme}
                       disabled={generatingProjectReadme}
-                      className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-surface text-xs font-semibold flex items-center gap-2 shadow-sm shrink-0 transition-all"
+                      className="btn-primary px-4 py-2.5 rounded-card text-xs font-semibold flex items-center gap-2 shrink-0 cursor-pointer disabled:opacity-50"
                     >
                       {generatingProjectReadme ? (
                         <>
@@ -997,7 +1229,7 @@ export default function CodebaseIntelligence() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => copyReadmeText(projectReadmeMarkdown, 'proj_readme')}
-                            className="px-3 py-1.5 rounded-lg bg-surface-muted border border-border text-text-secondary hover:text-primary transition-colors text-xs flex items-center gap-1.5"
+                            className="px-3 py-1.5 rounded-card bg-white border border-border text-text-dark hover:text-primary transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
                           >
                             {readmeCopiedKey === 'proj_readme' ? (
                               <>
@@ -1014,7 +1246,7 @@ export default function CodebaseIntelligence() {
 
                           <button
                             onClick={() => handleDownloadFile(projectReadmeMarkdown, `${analysisData.metadata.name}-README.md`)}
-                            className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary-dark hover:bg-primary hover:text-surface transition-all text-xs font-semibold flex items-center gap-1.5"
+                            className="btn-primary px-3 py-1.5 rounded-card text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                           >
                             <Download className="h-3.5 w-3.5" />
                             Download .md
@@ -1022,7 +1254,7 @@ export default function CodebaseIntelligence() {
                         </div>
                       </div>
 
-                      <pre className="p-4 rounded-xl bg-[#1E1E1E] text-neutral-200 text-xs font-mono overflow-x-auto max-h-96 leading-relaxed border border-border">
+                      <pre className="p-4 rounded-card bg-[#1E1E1E] text-neutral-200 text-xs font-mono overflow-x-auto max-h-96 leading-relaxed border border-border">
                         <code>{projectReadmeMarkdown}</code>
                       </pre>
                     </div>
@@ -1030,16 +1262,16 @@ export default function CodebaseIntelligence() {
                 </div>
 
                 {/* 2. GitHub Profile README Generator */}
-                <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
+                <div className="bg-surface rounded-card border border-border p-6 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <Github className="h-5 w-5 text-secondary" />
-                        <h3 className="text-base font-bold text-text-primary">
-                          GitHub Profile README Generator (<code className="text-xs bg-surface-muted px-1.5 py-0.5 rounded font-mono">github.com/{syncedProfile?.login || 'user'}</code>)
+                        <Github className="h-5 w-5 text-primary" />
+                        <h3 className="text-base font-bold text-text-dark">
+                          GitHub Profile README Generator (<code className="text-xs bg-white px-1.5 py-0.5 rounded font-mono border border-border">{syncedProfile?.login || 'user'}</code>)
                         </h3>
                       </div>
-                      <p className="text-xs text-text-secondary">
+                      <p className="text-xs text-text-body">
                         Generates a high-converting profile showcase with live stats widgets, tech stack badges, and featured repositories.
                       </p>
                     </div>
@@ -1047,7 +1279,7 @@ export default function CodebaseIntelligence() {
                     <button
                       onClick={handleGenerateProfileReadme}
                       disabled={generatingProfileReadme}
-                      className="px-5 py-2.5 rounded-xl bg-secondary hover:bg-secondary-dark text-surface text-xs font-semibold flex items-center gap-2 shadow-sm shrink-0 transition-all"
+                      className="btn-primary px-4 py-2.5 rounded-card text-xs font-semibold flex items-center gap-2 shrink-0 cursor-pointer disabled:opacity-50"
                     >
                       {generatingProfileReadme ? (
                         <>
@@ -1072,7 +1304,7 @@ export default function CodebaseIntelligence() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => copyReadmeText(profileReadmeMarkdown, 'prof_readme')}
-                            className="px-3 py-1.5 rounded-lg bg-surface-muted border border-border text-text-secondary hover:text-primary transition-colors text-xs flex items-center gap-1.5"
+                            className="px-3 py-1.5 rounded-card bg-white border border-border text-text-dark hover:text-primary transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
                           >
                             {readmeCopiedKey === 'prof_readme' ? (
                               <>
@@ -1089,7 +1321,7 @@ export default function CodebaseIntelligence() {
 
                           <button
                             onClick={() => handleDownloadFile(profileReadmeMarkdown, `README.md`)}
-                            className="px-3 py-1.5 rounded-lg bg-secondary/10 text-secondary-dark hover:bg-secondary hover:text-surface transition-all text-xs font-semibold flex items-center gap-1.5"
+                            className="btn-primary px-3 py-1.5 rounded-card text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                           >
                             <Download className="h-3.5 w-3.5" />
                             Download README.md
@@ -1097,7 +1329,7 @@ export default function CodebaseIntelligence() {
                         </div>
                       </div>
 
-                      <pre className="p-4 rounded-xl bg-[#1E1E1E] text-neutral-200 text-xs font-mono overflow-x-auto max-h-96 leading-relaxed border border-border">
+                      <pre className="p-4 rounded-card bg-[#1E1E1E] text-neutral-200 text-xs font-mono overflow-x-auto max-h-96 leading-relaxed border border-border">
                         <code>{profileReadmeMarkdown}</code>
                       </pre>
                     </div>

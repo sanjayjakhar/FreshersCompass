@@ -1,11 +1,16 @@
 import os
 import json
+from typing import Optional
 import google.generativeai as genai
 from pydantic import BaseModel
+from app.services.parser import extract_social_links
 
 class ResumeData(BaseModel):
     name: str
     email: str
+    github_username: Optional[str] = ""
+    github_url: Optional[str] = ""
+    linkedin_url: Optional[str] = ""
     skills: list[str]
     experience: list[dict]
     education: list[dict]
@@ -19,15 +24,14 @@ def init_gemini():
     genai.configure(api_key=api_key)
 
 def parse_resume_with_gemini(raw_text: str) -> dict:
-    init_gemini()
-    
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    model = genai.GenerativeModel(model_name)
-    
+    deterministic_social = extract_social_links(raw_text)
+
     prompt = f"""
     You are an expert ATS (Applicant Tracking System) and technical recruiter. 
     Parse the following resume text and extract the required information.
     
+    Extract the candidate's name, email, GitHub username (without '@'), GitHub profile URL, and LinkedIn URL.
+    Check both regular text and the detected hyperlinks section.
     Calculate an ATS Score out of 100 based on standard industry metrics (impact, action verbs, keywords, formatting).
     Also provide 3-5 specific improvement suggestions.
     
@@ -35,7 +39,10 @@ def parse_resume_with_gemini(raw_text: str) -> dict:
     {{
       "name": "Full Name",
       "email": "email@example.com",
-      "skills": ["Python", "React", ...],
+      "github_username": "username or empty string if not found",
+      "github_url": "https://github.com/username or empty string",
+      "linkedin_url": "https://www.linkedin.com/in/... or empty string",
+      "skills": ["Python", "React"],
       "experience": [{{"company": "X", "role": "Y", "duration": "Z", "description": "..."}}],
       "education": [{{"institution": "A", "degree": "B", "year": "C"}}],
       "ats_score": 85,
@@ -46,17 +53,90 @@ def parse_resume_with_gemini(raw_text: str) -> dict:
     -----------------------
     {raw_text}
     """
-    
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
-            response_mime_type="application/json",
-            temperature=0.2,
-        )
-    )
-    
+
+    parsed_json_str = None
+    provider_used = None
+
+    # 1. Primary: Google Gemini
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            init_gemini()
+            for model_name in ["gemini-flash-latest", "gemini-2.5-flash"]:
+                try:
+                    m = genai.GenerativeModel(model_name)
+                    resp = m.generate_content(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            response_mime_type="application/json",
+                            temperature=0.2
+                        )
+                    )
+                    if resp and resp.text and resp.text.strip():
+                        parsed_json_str = resp.text.strip()
+                        provider_used = f"Google Gemini ({model_name})"
+                        break
+                except Exception as m_err:
+                    print(f"[Resume Parser] Gemini {model_name} notice: {m_err}")
+                    continue
+        except Exception as g_err:
+            print(f"[Resume Parser] Gemini initialization notice: {g_err}")
+
+    # 2. Secondary Fallback: Groq (Qwen / GPT-OSS)
+    if not parsed_json_str:
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            try:
+                from groq import Groq
+                client = Groq(api_key=groq_key)
+                for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+                    try:
+                        chat = client.chat.completions.create(
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": "You are an expert ATS (Applicant Tracking System) parser. Return STRICTLY a valid JSON object matching the requested schema with name, email, github_username, github_url, linkedin_url, skills, experience, education, ats_score, improvement_suggestions."
+                                },
+                                {"role": "user", "content": prompt}
+                            ],
+                            model=model_name,
+                            response_format={"type": "json_object"},
+                            temperature=0.2,
+                        )
+                        text = chat.choices[0].message.content
+                        if text and text.strip():
+                            parsed_json_str = text.strip()
+                            provider_used = f"Groq ({model_name})"
+                            break
+                    except Exception as q_err:
+                        print(f"[Resume Parser] Groq {model_name} notice: {q_err}")
+                        continue
+            except Exception as grq_err:
+                print(f"[Resume Parser] Groq client error: {grq_err}")
+
+    if not parsed_json_str:
+        raise ValueError("AI Resume Parsing unavailable. Both Gemini and Groq are temporarily unreachable or rate-limited.")
+
     try:
-        return json.loads(response.text)
+        data = json.loads(parsed_json_str)
+        print(f"[Resume Parser] Successfully parsed resume using {provider_used}")
+
+        # Merge deterministic social links if AI missed them
+        if not data.get("github_username") and deterministic_social.get("github_username"):
+            data["github_username"] = deterministic_social["github_username"]
+        if not data.get("github_url") and deterministic_social.get("github_url"):
+            data["github_url"] = deterministic_social["github_url"]
+        if not data.get("linkedin_url") and deterministic_social.get("linkedin_url"):
+            data["linkedin_url"] = deterministic_social["linkedin_url"]
+
+        # Clean username (strip leading @ or trailing slashes)
+        if data.get("github_username"):
+            data["github_username"] = data["github_username"].strip().lstrip("@").strip("/ ")
+            if not data.get("github_url"):
+                data["github_url"] = f"https://github.com/{data['github_username']}"
+
+        return data
     except json.JSONDecodeError:
-        print("Failed to decode JSON from Gemini")
-        raise ValueError("AI returned invalid formatting")
+        print("[Resume Parser] Failed to decode JSON from AI response")
+        raise ValueError("AI returned invalid JSON formatting during resume parsing")
+

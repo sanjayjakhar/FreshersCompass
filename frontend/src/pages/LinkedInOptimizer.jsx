@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import {
   Linkedin, Sparkles, Copy, Check, TrendingUp, AlertCircle,
   Lightbulb, ArrowRight, RefreshCw, Key, Target, Award,
   Send, MessageSquare, Rocket, Github, CheckCircle2, UserCheck,
-  Share2, FileText, ArrowUpRight
+  Share2, FileText, ArrowUpRight, Briefcase
 } from 'lucide-react';
+import { fetchProfileFromDB, updateProfileInDB } from '../services/api';
 
 function VisibilityGauge({ score, size = 110, strokeWidth = 8 }) {
   const radius = (size - strokeWidth) / 2;
@@ -66,6 +68,43 @@ export default function LinkedInOptimizer() {
   const [result, setResult] = useState(null);
   const [copiedKey, setCopiedKey] = useState(null);
   const [error, setError] = useState(null);
+  const [connectedGithubUser, setConnectedGithubUser] = useState('');
+  const [syncSuccessMessage, setSyncSuccessMessage] = useState(null);
+
+  // Restore cached LinkedIn profile from MongoDB on mount
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const prof = await fetchProfileFromDB();
+        if (prof?.github_username) {
+          setConnectedGithubUser(prof.github_username);
+        }
+        if (prof?.linkedin_data) {
+          const parsed = prof.linkedin_data;
+          setResult(parsed);
+          if (parsed.target_role) setTargetRole(parsed.target_role);
+          if (parsed.headline) setHeadline(parsed.headline);
+          if (parsed.about) setAbout(parsed.about);
+          if (parsed.candidate_name) setCandidateName(parsed.candidate_name);
+        } else if (prof) {
+          if (prof.target_role) setTargetRole(prof.target_role);
+          if (prof.headline) setHeadline(prof.headline);
+          if (prof.bio) setAbout(prof.bio);
+          if (prof.candidate_name) setCandidateName(prof.candidate_name);
+        }
+      } catch (e) {
+        console.error('Error loading LinkedIn profile from MongoDB:', e);
+      }
+    };
+    loadProfile();
+
+    const handleSync = (e) => {
+      const u = e?.detail !== undefined ? e.detail : '';
+      if (u) setConnectedGithubUser(u);
+    };
+    window.addEventListener('freshercompass_profile_updated', handleSync);
+    return () => window.removeEventListener('freshercompass_profile_updated', handleSync);
+  }, []);
 
   // Launch Post state
   const [postRepoName, setPostRepoName] = useState('FreshersCompass');
@@ -129,18 +168,26 @@ export default function LinkedInOptimizer() {
   const handleSyncFromGitHub = async () => {
     try {
       setFetchingProfile(true);
-      const res = await axios.get('http://localhost:5000/api/github/user/sanjayjakhar/repos');
+      setError(null);
+      const targetUser = (connectedGithubUser || 'sanjayjakhar').trim().replace(/^@/, '');
+      const res = await axios.get(`http://localhost:5000/api/github/user/${encodeURIComponent(targetUser)}/repos`);
       const profile = res.data?.data?.profile;
       const repos = res.data?.data?.repos || [];
 
-      if (profile) {
-        setCandidateName(profile.name || 'Sanjay Jakhar');
+      if (profile || repos.length > 0) {
+        const name = profile?.name || targetUser || 'Sanjay Jakhar';
+        setCandidateName(name);
         const topProjects = repos.slice(0, 3).map((r) => r.name).join(', ');
         setHeadline(`Full-Stack Software Engineer | Builder of ${topProjects || 'Production Web Apps'} | Open to Opportunities`);
-        setAbout(`Full-Stack Developer passionate about clean architectures and developer tools. Active open-source contributor with ${repos.length} public GitHub projects including ${topProjects}. Proficient in React, Node.js, and modern cloud technologies.`);
+        setAbout(`Full-Stack Developer passionate about clean architectures and developer tools. Active open-source contributor with ${repos.length} public GitHub projects including ${topProjects || 'full-stack platforms'}. Proficient in React, Node.js, and modern cloud technologies.`);
+        setSyncSuccessMessage(`Successfully auto-filled headline & about from @${targetUser}'s GitHub projects (${repos.length} repos discovered)!`);
+        setTimeout(() => setSyncSuccessMessage(null), 5000);
+      } else {
+        setError(`No public repositories found for @${targetUser}.`);
       }
     } catch (err) {
       console.error(err);
+      setError('Could not auto-fill from GitHub projects. Please check your network or GitHub username.');
     } finally {
       setFetchingProfile(false);
     }
@@ -162,7 +209,25 @@ export default function LinkedInOptimizer() {
         target_role: targetRole,
       });
 
-      setResult(res.data.data);
+      const data = res.data.data;
+      setResult(data);
+      try {
+        await updateProfileInDB({
+          linkedin_data: {
+            ...data,
+            target_role: targetRole,
+            headline,
+            about,
+            candidate_name: candidateName,
+          },
+          target_role: targetRole,
+          headline,
+          about,
+          candidate_name: candidateName,
+        });
+      } catch (err) {
+        console.error('Error saving LinkedIn profile to MongoDB:', err);
+      }
     } catch (err) {
       console.error(err);
       setError(
@@ -297,12 +362,19 @@ export default function LinkedInOptimizer() {
                   <button
                     onClick={handleSyncFromGitHub}
                     disabled={fetchingProfile}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200/60 transition-colors self-start sm:self-auto"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200/60 transition-colors self-start sm:self-auto cursor-pointer"
                   >
                     <Github className="h-3.5 w-3.5" />
                     <span>Auto-fill from GitHub projects</span>
                   </button>
                 </div>
+
+                {syncSuccessMessage && (
+                  <div className="mb-3 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-xl flex items-center gap-2 animate-fade-up">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>{syncSuccessMessage}</span>
+                  </div>
+                )}
                 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   <div className="relative flex-grow">
@@ -575,6 +647,25 @@ export default function LinkedInOptimizer() {
                     </ul>
                   </div>
 
+                </div>
+
+                {/* Direct CTA to Live Jobs */}
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-3xl p-6 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-md shadow-blue-500/20">
+                  <div>
+                    <h4 className="text-base font-bold flex items-center gap-2">
+                      <Briefcase className="h-5 w-5 text-blue-200" /> Ready to find jobs tailored to your LinkedIn profile?
+                    </h4>
+                    <p className="text-xs text-blue-100 mt-1">
+                      Matched using {result.recommended_keywords?.length || 5}+ recruiter keywords and your target role ({targetRole}) in our Live Job feed.
+                    </p>
+                  </div>
+                  <Link
+                    to="/jobs?source=linkedin"
+                    className="px-5 py-2.5 rounded-xl bg-white text-blue-700 hover:bg-blue-50 text-xs font-bold transition-all shadow-sm shrink-0 flex items-center gap-1.5 active:scale-95"
+                  >
+                    <span>View Matched Live Jobs</span>
+                    <ArrowUpRight className="h-4 w-4" />
+                  </Link>
                 </div>
 
               </div>

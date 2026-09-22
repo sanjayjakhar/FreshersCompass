@@ -39,7 +39,70 @@ const filterJobs = (jobs, filters) => {
 
     // 4. Domain filter
     if (domain && domain !== "all") {
-      if (j.domain && j.domain.toLowerCase() !== domain.toLowerCase()) {
+      const d = domain.toLowerCase();
+      const jobDomain = (j.domain || "").toLowerCase();
+      const jobTitle = (j.title || "").toLowerCase();
+      const jobTags = (j.tags || []).map((t) => String(t).toLowerCase());
+
+      let matchesDomain = jobDomain === d;
+
+      if (!matchesDomain) {
+        if (d === "backend") {
+          matchesDomain =
+            jobDomain.includes("backend") ||
+            jobTitle.includes("backend") ||
+            jobTitle.includes("back-end") ||
+            jobTitle.includes("back end") ||
+            jobTitle.includes("node") ||
+            jobTitle.includes("golang") ||
+            jobTitle.includes("python developer") ||
+            jobTitle.includes("api") ||
+            jobTitle.includes("server") ||
+            jobTitle.includes("java developer") ||
+            jobTitle.includes("systems") ||
+            jobTags.some((t) => ["backend", "node.js", "node", "python", "java", "go", "golang", "sql", "postgresql", "mongodb", "kafka", "redis", "express", "fastapi", "spring boot", "rest apis"].includes(t));
+        } else if (d === "frontend") {
+          matchesDomain =
+            jobDomain.includes("frontend") ||
+            jobTitle.includes("frontend") ||
+            jobTitle.includes("front-end") ||
+            jobTitle.includes("front end") ||
+            jobTitle.includes("react") ||
+            jobTitle.includes("ui") ||
+            jobTitle.includes("vue") ||
+            jobTitle.includes("angular") ||
+            jobTitle.includes("web") ||
+            jobTags.some((t) => ["frontend", "react", "react.js", "next.js", "vue", "angular", "tailwind", "tailwind css", "typescript", "javascript", "css", "html", "redux"].includes(t));
+        } else if (d === "full-stack" || d === "fullstack") {
+          matchesDomain =
+            jobDomain.includes("full") ||
+            jobTitle.includes("full") ||
+            jobTitle.includes("stack") ||
+            jobTitle.includes("software engineer") ||
+            jobTitle.includes("sde") ||
+            jobTitle.includes("developer");
+        } else if (d === "ai/ml" || d === "ai" || d === "ml") {
+          matchesDomain =
+            jobDomain.includes("ai") ||
+            jobTitle.includes("ai") ||
+            jobTitle.includes("ml") ||
+            jobTitle.includes("machine learning") ||
+            jobTitle.includes("data") ||
+            jobTitle.includes("deep learning") ||
+            jobTitle.includes("nlp") ||
+            jobTags.some((t) => ["ai", "ml", "python", "pytorch", "nlp", "rag", "rag / llms", "pandas", "data"].includes(t));
+        } else if (d === "devops") {
+          matchesDomain =
+            jobDomain.includes("devops") ||
+            jobTitle.includes("devops") ||
+            jobTitle.includes("cloud") ||
+            jobTitle.includes("sre") ||
+            jobTitle.includes("infrastructure") ||
+            jobTags.some((t) => ["devops", "cloud", "aws", "kubernetes", "docker", "sre", "terraform", "ci/cd", "linux"].includes(t));
+        }
+      }
+
+      if (!matchesDomain) {
         return false;
       }
     }
@@ -83,8 +146,8 @@ export const getLiveJobsList = async (req, res) => {
 
 export const getRecommendedJobs = async (req, res) => {
   try {
-    const { user_skills, grad_year, type, location, domain, search } = req.body;
-    const skills = Array.isArray(user_skills) ? user_skills : [];
+    const { user_skills, grad_year, type, location, domain, search, profile_source } = req.body;
+    const skills = Array.isArray(user_skills) ? user_skills.filter(Boolean) : [];
     const allJobs = await fetchLiveJobs();
     const filteredJobs = filterJobs(allJobs, { grad_year, type, location, domain, search });
 
@@ -93,7 +156,13 @@ export const getRecommendedJobs = async (req, res) => {
         message: "Live jobs returned (no user skills provided)",
         count: filteredJobs.length,
         total_unfiltered: allJobs.length,
-        data: filteredJobs.map((j) => ({ ...j, match_score: 70, matched_skills: [], missing_skills: [] })),
+        data: filteredJobs.map((j) => ({
+          ...j,
+          match_score: 70,
+          matched_skills: [],
+          missing_skills: (j.tags || []).slice(0, 3),
+          match_source: profile_source || "general",
+        })),
       });
     }
 
@@ -106,24 +175,59 @@ export const getRecommendedJobs = async (req, res) => {
         { headers: getAiServiceHeaders(), timeout: 15000 }
       );
 
+      const matchedList = (matchRes.data?.jobs || filteredJobs).map((j) => ({
+        ...j,
+        match_source: profile_source || "ai_model",
+      }));
+
       return res.status(200).json({
         message: "Recommended jobs generated successfully",
-        count: matchRes.data?.jobs?.length || 0,
+        count: matchedList.length,
         total_unfiltered: allJobs.length,
-        data: matchRes.data?.jobs || filteredJobs,
+        data: matchedList,
       });
     } catch (aiErr) {
-      console.log("AI service match notice:", aiErr.message);
-      return res.status(200).json({
-        message: "Live jobs returned with heuristic match",
-        count: filteredJobs.length,
-        total_unfiltered: allJobs.length,
-        data: filteredJobs.map((j) => ({
+      console.log("AI service match notice (using fallback ranker):", aiErr.message);
+      
+      const userSkillsClean = skills.map((s) => s.toLowerCase().trim());
+      const rankedJobs = filteredJobs.map((j) => {
+        const jobText = `${j.title || ""} ${j.description || ""} ${(j.tags || []).join(" ")}`.toLowerCase();
+        const matched = [];
+        const missing = [];
+
+        userSkillsClean.forEach((sk, idx) => {
+          if (jobText.includes(sk)) {
+            matched.push(skills[idx]);
+          }
+        });
+
+        (j.tags || []).forEach((tag) => {
+          if (!userSkillsClean.includes(tag.toLowerCase())) {
+            missing.push(tag);
+          }
+        });
+
+        const totalSkills = matched.length + missing.slice(0, 3).length;
+        const score = totalSkills > 0
+          ? Math.min(96, Math.max(45, Math.round((matched.length / totalSkills) * 100)))
+          : 68;
+
+        return {
           ...j,
-          match_score: 75,
-          matched_skills: skills.slice(0, 3),
-          missing_skills: [],
-        })),
+          match_score: score,
+          matched_skills: matched.slice(0, 5),
+          missing_skills: missing.slice(0, 3),
+          match_source: profile_source || "heuristic",
+        };
+      });
+
+      rankedJobs.sort((a, b) => b.match_score - a.match_score);
+
+      return res.status(200).json({
+        message: "Live jobs returned with intelligent match",
+        count: rankedJobs.length,
+        total_unfiltered: allJobs.length,
+        data: rankedJobs,
       });
     }
   } catch (error) {

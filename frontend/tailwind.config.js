@@ -7,59 +7,87 @@ export default {
   theme: {
     extend: {
       colors: {
-        // ---- Primary (Modern Royal Blue) — headings, nav, links, primary buttons ----
-        primary: {
-          DEFAULT: "#2563EB",
-          light: "#3B82F6",
-          dark: "#1D4ED8",
-        },
-        // ---- Secondary (Fresh Emerald) — progress, tags, verified indicators ----
-        secondary: {
-          DEFAULT: "#059669",
-          light: "#10B981",
-          dark: "#047857",
-        },
-        // ---- Accent (Vibrant Violet / Coral) — badges & highlights ----
-        accent: {
-          DEFAULT: "#7C3AED",
-          light: "#8B5CF6",
-          dark: "#6D28D9",
-        },
-        // ---- Semantic colors ----
-        success: {
-          DEFAULT: "#10B981",
-          light: "#34D399",
-          dark: "#059669",
-        },
-        warning: {
-          DEFAULT: "#F59E0B",
-          light: "#FBBF24",
-          dark: "#D97706",
-        },
-        danger: {
-          DEFAULT: "#EF4444",
-          light: "#F87171",
-          dark: "#DC2626",
-        },
-        // ---- Neutrals (Clean Slate & Pure White) ----
+        // Background & Surfaces
+        background: "#FFFFFF",
         surface: {
-          DEFAULT: "#FFFFFF",
-          muted: "#F8FAFC",
+          DEFAULT: "#F1EFE8",
+          card: "#F1EFE8",
+          muted: "#F7F6F2",
+          white: "#FFFFFF",
         },
+        // Borders & Dividers
         border: {
-          DEFAULT: "#E2E8F0",
+          DEFAULT: "#E5E4DF",
+          muted: "#EAE9E4",
         },
+        // Text Hierarchy
+        "text-primary": "#185FA5",
+        "text-body": "#5F5E5A",
+        "text-secondary": "#5F5E5A",
+        "text-muted": "#8A8984",
+        "text-dark": "#1A1A18",
         text: {
-          primary: "#0F172A",
-          secondary: "#475569",
-          muted: "#94A3B8",
+          primary: "#185FA5",
+          body: "#5F5E5A",
+          secondary: "#5F5E5A",
+          muted: "#8A8984",
+          dark: "#1A1A18",
+        },
+        // Primary Identity (Blue) — headings, nav, links, primary text
+        primary: {
+          DEFAULT: "#185FA5",
+          light: "#2575C0",
+          dark: "#124B84",
+          subtle: "#EBF3FA",
+        },
+        // Secondary (Teal) — progress bars & growth indicators ONLY
+        secondary: {
+          DEFAULT: "#0F6E56",
+          light: "#148B6D",
+          dark: "#0A4E3D",
+          subtle: "#E6F4F0",
+        },
+        // Accent (Coral) — exactly ONE main CTA per screen
+        accent: {
+          DEFAULT: "#D85A30",
+          light: "#E26E47",
+          dark: "#BD4B24",
+          subtle: "#FCEFEA",
+        },
+        // Semantic: Success (Green) — good scores, completed tasks
+        success: {
+          DEFAULT: "#639922",
+          light: "#79B92B",
+          dark: "#4E7B1A",
+          subtle: "#EFF7E6",
+        },
+        // Semantic: Warning (Amber) — skill gaps, warnings
+        warning: {
+          DEFAULT: "#EF9F27",
+          light: "#F3AF47",
+          dark: "#D48714",
+          subtle: "#FDF5E8",
+        },
+        // Semantic: Danger (Red) — errors only
+        danger: {
+          DEFAULT: "#E24B4A",
+          light: "#EA6867",
+          dark: "#C53635",
+          subtle: "#FCEEEF",
         },
       },
       borderRadius: {
-        card: "16px",
+        card: "12px",
+      },
+      boxShadow: {
+        "2xs": "0 1px 2px 0 rgba(0, 0, 0, 0.03)",
+        "xs": "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+      },
+      backdropBlur: {
+        "xs": "2px",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
       },
       animation: {
         blob: "blob 7s infinite",

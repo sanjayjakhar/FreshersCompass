@@ -81,6 +81,8 @@ backend/uploads/
 backend/tmp/
 ai-service/tmp/
 ai-service/vector_store_data/
+ai-service/*.docx
+ai-service/*.pdf
 
 # ---------------------------------------------------------
 # OS files
