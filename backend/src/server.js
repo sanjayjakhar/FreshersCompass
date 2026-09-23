@@ -5,6 +5,7 @@ import cors from "cors";
 import morgan from "morgan";
 import dotenv from "dotenv";
 import multer from "multer";
+import axios from "axios";
 import sanitizeInput from "./middleware/sanitize.js";
 import { sessionIsolationMiddleware } from "./middleware/auth.middleware.js";
 
