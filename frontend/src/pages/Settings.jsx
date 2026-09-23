@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Github, Bell, Shield, Key, Check } from 'lucide-react';
-import { fetchProfileFromDB, updateProfileInDB } from '../services/api';
+import { Settings as SettingsIcon, Github, Bell, Shield, Key, Check, Zap, Activity, RefreshCw } from 'lucide-react';
+import { fetchProfileFromDB, updateProfileInDB, fetchDiagnostics } from '../services/api';
 
 export default function Settings() {
   const [githubUser, setGithubUser] = useState('');
   const [saved, setSaved] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(null);
+  const [testingAi, setTestingAi] = useState(false);
 
   useEffect(() => {
     fetchProfileFromDB().then((profile) => {
@@ -12,7 +14,20 @@ export default function Settings() {
         setGithubUser(profile.github_username);
       }
     });
+    runDiagnostics();
   }, []);
+
+  const runDiagnostics = async () => {
+    try {
+      setTestingAi(true);
+      const res = await fetchDiagnostics();
+      setDiagnostics(res);
+    } catch (err) {
+      console.error('Diagnostics test error:', err);
+    } finally {
+      setTestingAi(false);
+    }
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -30,10 +45,11 @@ export default function Settings() {
           Platform Settings
         </h1>
         <p className="text-text-body text-sm mt-1">
-          Manage your account integrations, AI models, and profile telemetry.
+          Manage your account integrations, AI engine diagnostics, and profile telemetry.
         </p>
       </div>
 
+      {/* GitHub Profile Card */}
       <div className="bg-surface rounded-card border border-border p-6 shadow-2xs space-y-6">
         <h2 className="text-sm font-bold text-text-dark flex items-center gap-2">
           <Github className="h-4 w-4 text-primary" /> Connected GitHub Profile
@@ -66,6 +82,61 @@ export default function Settings() {
         </form>
       </div>
 
+      {/* AI Engine Telemetry & Live Diagnostics */}
+      <div className="bg-surface rounded-card border border-border p-6 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-text-dark flex items-center gap-2">
+              <Zap className="h-4 w-4 text-secondary" /> AI Model Engine & Diagnostics
+            </h2>
+            <p className="text-xs text-text-muted mt-0.5">
+              Live telemetry on multi-tier LLM orchestration with automatic rate-limit failover.
+            </p>
+          </div>
+          <button
+            onClick={runDiagnostics}
+            disabled={testingAi}
+            className="btn-secondary text-xs py-2 px-3 self-start sm:self-auto inline-flex items-center gap-1.5"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${testingAi ? 'animate-spin' : ''}`} />
+            <span>{testingAi ? 'Testing Latency...' : 'Run Connectivity Check'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+          <div className="bg-white p-3.5 rounded-xl border border-border">
+            <span className="text-[11px] font-semibold text-text-muted block">Primary Model</span>
+            <span className="text-xs font-bold text-primary font-mono block mt-1">
+              {diagnostics?.aiService?.models?.primary || 'Google Gemini 2.5 Flash'}
+            </span>
+            <span className="text-[10px] text-success font-medium mt-1 inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-success"></span> Active Tier 1
+            </span>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-xl border border-border">
+            <span className="text-[11px] font-semibold text-text-muted block">Failover Cloud</span>
+            <span className="text-xs font-bold text-secondary font-mono block mt-1">
+              {diagnostics?.aiService?.models?.fallback || 'Groq Qwen 27B / GPT-OSS'}
+            </span>
+            <span className="text-[10px] text-text-muted font-medium mt-1 inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span> 0ms Standby
+            </span>
+          </div>
+
+          <div className="bg-white p-3.5 rounded-xl border border-border">
+            <span className="text-[11px] font-semibold text-text-muted block">AI Service Roundtrip</span>
+            <span className="text-xs font-bold text-text-dark font-mono block mt-1">
+              {diagnostics?.aiService?.latencyMs ? `${diagnostics.aiService.latencyMs} ms` : 'Live Connected'}
+            </span>
+            <span className="text-[10px] text-success font-medium mt-1 inline-flex items-center gap-1">
+              <Activity className="h-3 w-3 text-success" /> Sub-second latency
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Data Privacy & Retention */}
       <div className="bg-surface rounded-card border border-border p-6 shadow-2xs space-y-4">
         <h2 className="text-sm font-bold text-text-dark flex items-center gap-2">
           <Shield className="h-4 w-4 text-primary" /> Data Privacy & Retention

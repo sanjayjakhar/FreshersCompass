@@ -1,0 +1,80 @@
+services:
+  # 1. MongoDB Database Container
+  mongo:
+    image: mongo:7.0
+    container_name: fresherscompass-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - fc-network
+
+  # 2. Python FastAPI AI Service
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: fresherscompass-ai-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - BACKEND_URL=http://backend:5000
+      - AI_SERVICE_INTERNAL_KEY=ai_internal_secret_fc_98u23r09ju023jf
+    env_file:
+      - path: ./ai-service/.env
+        required: false
+    networks:
+      - fc-network
+
+  # 3. Node.js Express Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fresherscompass-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - ai-service
+    environment:
+      - PORT=5000
+      - MONGO_URI=mongodb://mongo:27017/freshercompass
+      - AI_SERVICE_URL=http://ai-service:8000
+      - AI_SERVICE_INTERNAL_KEY=ai_internal_secret_fc_98u23r09ju023jf
+      - CLIENT_URL=http://localhost:5173
+      - JWT_SECRET=fc_jwt_secret_dev_key_fallback
+    env_file:
+      - path: ./backend/.env
+        required: false
+    networks:
+      - fc-network
+
+  # 4. React Vite Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fresherscompass-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:5000/api
+    networks:
+      - fc-network
+
+volumes:
+  mongo_data:
+    driver: local
+
+networks:
+  fc-network:
+    driver: bridge

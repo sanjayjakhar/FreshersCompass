@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -9,6 +9,8 @@ import {
   Layers, ArrowLeftRight, Compass, ArrowRight
 } from 'lucide-react';
 import api, { fetchLatestResume, fetchProfileFromDB } from '../services/api';
+import useDebounce from '../hooks/useDebounce';
+
 
 const TRACK_PRESETS = [
   {
@@ -78,6 +80,8 @@ export default function JobRecommendations() {
   const [selectedDomain, setSelectedDomain] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [error, setError] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(12);
+
 
   // Filter Constants
   const gradYears = [
@@ -236,10 +240,12 @@ export default function JobRecommendations() {
     setNewSkillInput('');
   };
 
-  // Client-side search across jobs
+  // Client-side search across jobs with 300ms debouncing to prevent UI jank
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+
   const filteredJobs = useMemo(() => {
-    if (!searchQuery.trim()) return jobs;
-    const q = searchQuery.toLowerCase();
+    if (!debouncedSearchQuery.trim()) return jobs;
+    const q = debouncedSearchQuery.toLowerCase();
     return jobs.filter((j) => {
       const title = (j.title || '').toLowerCase();
       const company = (j.company || '').toLowerCase();
@@ -248,7 +254,14 @@ export default function JobRecommendations() {
       const tags = (j.tags || []).some((t) => t.toLowerCase().includes(q));
       return title.includes(q) || company.includes(q) || location.includes(q) || domain.includes(q) || tags;
     });
-  }, [jobs, searchQuery]);
+  }, [jobs, debouncedSearchQuery]);
+
+  // Windowed visible slice to prevent DOM overhead during high cardinality results
+  const visibleJobs = useMemo(() => {
+    return filteredJobs.slice(0, visibleCount);
+  }, [filteredJobs, visibleCount]);
+
+
 
   // Avatar colors
   const getAvatarBg = (name = '') => {
@@ -821,7 +834,8 @@ export default function JobRecommendations() {
         {/* ============================================================ */}
         {!loading && filteredJobs.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {filteredJobs.map((job) => {
+            {visibleJobs.map((job) => {
+
               const avatarClass = getAvatarBg(job.company);
               const initials = (job.company || 'TC').slice(0, 2).toUpperCase();
 
@@ -969,6 +983,22 @@ export default function JobRecommendations() {
             })}
           </div>
         )}
+
+        {/* Paginated Virtualization: Load More Opportunities */}
+        {!loading && visibleJobs.length < filteredJobs.length && (
+          <div className="text-center pt-8 pb-4">
+            <button
+              onClick={() => setVisibleCount((prev) => prev + 12)}
+              className="px-6 py-3 bg-white text-slate-800 border border-slate-300 hover:border-blue-400 font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all inline-flex items-center gap-2"
+            >
+              <span>Load More Opportunities</span>
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-mono text-[10px]">
+                +{filteredJobs.length - visibleJobs.length} more
+              </span>
+            </button>
+          </div>
+        )}
       </div>
     );
   }
+

@@ -2,6 +2,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import Resume from '../models/Resume.model.js';
 import Profile from '../models/Profile.model.js';
+import { getEffectiveUserId } from '../middleware/auth.middleware.js';
 
 /**
  * Upload resume, parse via AI microservice, and persist directly to MongoDB
@@ -39,8 +40,9 @@ export const uploadResume = async (req, res) => {
       });
     }
 
-    // Persist parsed data to MongoDB
-    const userId = req.user?.id || 'default_user';
+    // Persist parsed data to isolated user/session record in MongoDB
+    const userId = getEffectiveUserId(req);
+
     const savedResume = await Resume.findOneAndUpdate(
       { userId },
       {
@@ -89,8 +91,13 @@ export const uploadResume = async (req, res) => {
  */
 export const getLatestResume = async (req, res) => {
   try {
-    const userId = req.user?.id || 'default_user';
-    const resume = await Resume.findOne({ userId }).sort({ updatedAt: -1 });
+    const userId = getEffectiveUserId(req);
+    let resume = await Resume.findOne({ userId }).sort({ updatedAt: -1 });
+
+    // Graceful fallback to default demo resume if new guest sandbox has not uploaded one yet
+    if (!resume) {
+      resume = await Resume.findOne({ userId: 'default_user' }).sort({ updatedAt: -1 });
+    }
 
     return res.status(200).json({
       message: 'Resume fetched from MongoDB',
@@ -110,7 +117,7 @@ export const getLatestResume = async (req, res) => {
  */
 export const saveDemoResume = async (req, res) => {
   try {
-    const userId = req.user?.id || 'default_user';
+    const userId = getEffectiveUserId(req);
     const demoData = {
       userId,
       name: 'Sanjay Jakhar',
@@ -160,10 +167,11 @@ export const saveDemoResume = async (req, res) => {
  */
 export const deleteResume = async (req, res) => {
   try {
-    const userId = req.user?.id || 'default_user';
+    const userId = getEffectiveUserId(req);
     await Resume.deleteMany({ userId });
     return res.status(200).json({ message: 'Resume cleared from database' });
   } catch (error) {
     return res.status(500).json({ message: 'Error deleting resume', details: error.message });
   }
 };
+
