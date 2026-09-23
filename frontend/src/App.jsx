@@ -12,12 +12,17 @@ import ApplicationTracker from './pages/ApplicationTracker';
 import PortfolioGenerator from './pages/PortfolioGenerator';
 import Settings from './pages/Settings';
 import LinkedInOptimizer from './pages/LinkedInOptimizer';
+import PublicPortfolio from './pages/PublicPortfolio';
 
 function App() {
   return (
     <Routes>
       {/* Public Landing Page */}
       <Route path="/" element={<LandingPage />} />
+
+      {/* Dedicated Public Developer Portfolio Previews (Accessible without authentication) */}
+      <Route path="/p/:username" element={<PublicPortfolio />} />
+      <Route path="/portfolio/:username" element={<PublicPortfolio />} />
 
       {/* Main App Cockpit Routes (Wrapped in Persistent Left Sidebar + Topbar) */}
       <Route

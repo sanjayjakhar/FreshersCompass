@@ -18,6 +18,13 @@ const profileSchema = new mongoose.Schema(
       velocity: { type: Number, default: 85 },
     },
     linkedin_data: { type: mongoose.Schema.Types.Mixed, default: null },
+    featured_project: { type: String, default: 'InternOps Platform' },
+    project_tech: { type: String, default: 'Node.js, Fastify, PostgreSQL, React, Vite' },
+    project_description: {
+      type: String,
+      default: 'Architecture and repository indexed for automated candidate defense.',
+    },
+    project_url: { type: String, default: '' },
   },
   {
     timestamps: true,
