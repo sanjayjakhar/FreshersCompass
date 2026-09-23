@@ -1,5 +1,5 @@
 import express from 'express';
-import { upload } from '../middleware/upload.middleware.js';
+import { upload, validateResumeMagicBytes } from '../middleware/upload.middleware.js';
 import {
   uploadResume,
   getLatestResume,
@@ -9,8 +9,9 @@ import {
 
 const router = express.Router();
 
-// Upload resume and persist to MongoDB
-router.post('/upload', upload.single('resume'), uploadResume);
+// Upload resume and persist to MongoDB (validated with strict magic bytes)
+router.post('/upload', upload.single('resume'), validateResumeMagicBytes, uploadResume);
+
 
 // Fetch latest resume from MongoDB
 router.get('/latest', getLatestResume);

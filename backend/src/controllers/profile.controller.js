@@ -1,12 +1,13 @@
 import Profile from '../models/Profile.model.js';
 import Resume from '../models/Resume.model.js';
+import { getEffectiveUserId } from '../middleware/auth.middleware.js';
 
 /**
  * Get active candidate profile and aggregated twin telemetry from MongoDB
  */
 export const getProfile = async (req, res) => {
   try {
-    const userId = req.user?.id || 'default_user';
+    const userId = getEffectiveUserId(req);
     let profile = await Profile.findOne({ userId });
 
     if (!profile) {
@@ -34,7 +35,8 @@ export const getProfile = async (req, res) => {
  */
 export const updateProfile = async (req, res) => {
   try {
-    const userId = req.user?.id || 'default_user';
+    const userId = getEffectiveUserId(req);
+
     const {
       github_username,
       candidate_name,

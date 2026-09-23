@@ -1,12 +1,8 @@
 import axios from "axios";
+import cacheService from "./cache.service.js";
 
-// In-memory cache for live jobs (refreshes every 10 minutes)
-let jobsCache = {
-  data: [],
-  lastFetched: 0,
-};
+const CACHE_TTL_MS = 15 * 60 * 1000;
 
-const CACHE_TTL_MS = 10 * 60 * 1000;
 
 // Curated active India tech jobs and internships feed covering top Indian tech hubs & startups
 const INDIA_TECH_JOBS_FEED = [
@@ -297,13 +293,16 @@ const detectJobDomain = (title = "", tags = []) => {
 
 export const fetchLiveJobs = async (options = {}) => {
   const { forceRefresh = false } = options;
-  const now = Date.now();
-
-  if (!forceRefresh && jobsCache.data.length > 0 && now - jobsCache.lastFetched < CACHE_TTL_MS) {
-    return jobsCache.data;
+  if (forceRefresh) {
+    cacheService.delete("live_jobs_feed");
   }
 
-  const normalizedJobs = [...INDIA_TECH_JOBS_FEED];
+  return cacheService.getOrFetch(
+    "live_jobs_feed",
+    async () => {
+      const now = Date.now();
+      const normalizedJobs = [...INDIA_TECH_JOBS_FEED];
+
 
   // 1. Fetch from Arbeitnow (European & Global Tech API)
   try {
@@ -390,10 +389,9 @@ export const fetchLiveJobs = async (options = {}) => {
     console.log("Jobicy API notice:", err.message);
   }
 
-  jobsCache = {
-    data: normalizedJobs,
-    lastFetched: now,
-  };
-
-  return normalizedJobs;
+      return normalizedJobs;
+    },
+    CACHE_TTL_MS
+  );
 };
+

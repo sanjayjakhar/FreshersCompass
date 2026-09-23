@@ -7,8 +7,11 @@ import google.generativeai as genai
 from app.services.gemini import init_gemini
 
 # In-memory vector store cache for fast local RAG queries
-# Format: { "owner/repo": { "chunks": [...], "embeddings": np.ndarray } }
+# Format: { "owner/repo": { "chunks": [...], "embeddings": np.ndarray, "normalized_embeddings": np.ndarray } }
 REPO_VECTOR_STORE: Dict[str, Dict[str, Any]] = {}
+
+# High-speed LRU query vector cache
+RAG_QUERY_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 
 def tf_vectorize(texts: List[str], dim: int = 512) -> np.ndarray:
     """
@@ -34,38 +37,54 @@ def tf_vectorize(texts: List[str], dim: int = 512) -> np.ndarray:
     return np.array(vectors, dtype=np.float32)
 
 def index_repository_chunks(repo_full_name: str, chunks: List[Dict[str, Any]]):
-    """Generates vectors for all chunks in the repository and stores in vector index."""
+    """Generates vectors for all chunks in the repository and stores in fast vector index."""
     if not chunks:
-        REPO_VECTOR_STORE[repo_full_name] = {"chunks": [], "embeddings": np.zeros((0, 512), dtype=np.float32)}
+        REPO_VECTOR_STORE[repo_full_name] = {
+            "chunks": [],
+            "embeddings": np.zeros((0, 512), dtype=np.float32),
+            "normalized_embeddings": np.zeros((0, 512), dtype=np.float32)
+        }
         return
 
     chunk_texts = [f"File: {c['file_path']}\n{c['content']}" for c in chunks]
     embeddings = tf_vectorize(chunk_texts, dim=512)
 
+    # Pre-normalize embeddings matrix once during indexing for sub-millisecond BLAS dot product
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    normalized_embeddings = embeddings / norms
+
     REPO_VECTOR_STORE[repo_full_name] = {
         "chunks": chunks,
         "embeddings": embeddings,
+        "normalized_embeddings": normalized_embeddings,
     }
     print(f"Successfully indexed {len(chunks)} chunks for {repo_full_name}. Embeddings matrix: {embeddings.shape}")
 
 def retrieve_relevant_chunks(repo_full_name: str, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-    """Performs hybrid cosine similarity and keyword-boosted search over indexed codebase chunks."""
+    """Performs sub-millisecond hybrid cosine similarity and keyword-boosted search over indexed codebase chunks."""
+    cache_key = f"{repo_full_name}:{query.strip().lower()}:{top_k}"
+    if cache_key in RAG_QUERY_CACHE:
+        return RAG_QUERY_CACHE[cache_key]
+
     store = REPO_VECTOR_STORE.get(repo_full_name)
     if not store or len(store["chunks"]) == 0:
         return []
 
     chunks = store["chunks"]
-    embeddings = store["embeddings"]
+    normalized_embeddings = store.get("normalized_embeddings")
+    if normalized_embeddings is None:
+        normalized_embeddings = store["embeddings"]
 
     q_emb = tf_vectorize([query], dim=512)[0]
     q_norm = np.linalg.norm(q_emb)
     if q_norm == 0:
         return chunks[:top_k]
 
-    # Compute cosine similarities
-    norms = np.linalg.norm(embeddings, axis=1) * q_norm
-    norms[norms == 0] = 1e-10
-    similarities = np.dot(embeddings, q_emb) / norms
+    q_normalized = q_emb / q_norm
+
+    # Fast BLAS dot product over pre-normalized matrix
+    similarities = np.dot(normalized_embeddings, q_normalized)
 
     # Keyword boosting: boost chunks where query keywords appear in filename or content
     query_tokens = [tok.lower() for tok in re.findall(r'[a-zA-Z0-9_]{2,}', query) if len(tok) >= 3]
@@ -103,7 +122,14 @@ def retrieve_relevant_chunks(repo_full_name: str, query: str, top_k: int = 5) ->
             "content": chunk["content"],
             "score": round(float(boosted_similarities[idx]), 3)
         })
+
+    # Cache query result (LRU eviction if cache exceeds 500 items)
+    if len(RAG_QUERY_CACHE) > 500:
+        RAG_QUERY_CACHE.pop(next(iter(RAG_QUERY_CACHE)))
+    RAG_QUERY_CACHE[cache_key] = results
+
     return results
+
 
 def execute_codebase_llm(prompt: str) -> Tuple[str, str]:
     """

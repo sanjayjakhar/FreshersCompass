@@ -1,9 +1,11 @@
 import axios from "axios";
+import cacheService from "../services/cache.service.js";
 
 const getAiServiceHeaders = () => ({
   "Content-Type": "application/json",
   "x-internal-key": process.env.AI_SERVICE_INTERNAL_KEY || "ai_internal_secret_fc_98u23r09ju023jf",
 });
+
 
 export const analyzeRepository = async (req, res) => {
   try {
@@ -144,21 +146,28 @@ export const getUserRepositories = async (req, res) => {
       return res.status(400).json({ message: "Username is required" });
     }
 
-    const headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    };
+    const cleanUsername = username.trim().toLowerCase();
+    const cacheKey = `gh_user_repos_${cleanUsername}`;
 
-    let profile = {
-      login: username,
-      name: username,
-      avatar_url: `https://github.com/${username}.png`,
-      bio: "Software Developer on GitHub",
-      public_repos: 0,
-      followers: 0,
-      html_url: `https://github.com/${username}`,
-    };
+    const data = await cacheService.getOrFetch(
+      cacheKey,
+      async () => {
+        const headers = {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        };
 
-    let repos = [];
+        let profile = {
+          login: username,
+          name: username,
+          avatar_url: `https://github.com/${username}.png`,
+          bio: "Software Developer on GitHub",
+          public_repos: 0,
+          followers: 0,
+          html_url: `https://github.com/${username}`,
+        };
+
+        let repos = [];
+
 
     // Attempt 1: GitHub REST API
     try {
@@ -243,25 +252,29 @@ export const getUserRepositories = async (req, res) => {
 
     // Fallback baseline if profile has zero public repos or network blocked
     if (repos.length === 0) {
-      repos.push({
-        name: "FreshersCompass",
-        full_name: `${username}/FreshersCompass`,
-        description: "AI-powered career and code intelligence platform for students and early-career developers.",
-        stars: 12,
-        forks: 3,
-        language: "JavaScript",
-        html_url: `https://github.com/${username}/FreshersCompass`,
-        updated_at: new Date().toISOString(),
-      });
-    }
+        repos.push({
+          name: "FreshersCompass",
+          full_name: `${username}/FreshersCompass`,
+          description: "AI-powered career and code intelligence platform for students and early-career developers.",
+          stars: 12,
+          forks: 3,
+          language: "JavaScript",
+          html_url: `https://github.com/${username}/FreshersCompass`,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      return { profile, repos };
+    },
+    30 * 60 * 1000 // 30 minutes TTL
+  );
+
 
     return res.status(200).json({
       message: "User profile and repositories retrieved successfully",
-      data: {
-        profile,
-        repos,
-      },
+      data,
     });
+
   } catch (error) {
     console.error("Error getting user repos:", error.message);
     return res.status(500).json({
@@ -337,4 +350,58 @@ export const generateProjectReadme = async (req, res) => {
     });
   }
 };
+
+export const analyzeRepositoryAsync = async (req, res) => {
+  try {
+    const { repo_url } = req.body;
+    if (!repo_url) {
+      return res.status(400).json({ message: "Repository URL is required." });
+    }
+
+    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+    const response = await axios.post(
+      `${aiServiceUrl}/github/analyze-async`,
+      { repo_url },
+      { headers: getAiServiceHeaders(), timeout: 15000 }
+    );
+
+    return res.status(200).json(response.data);
+  } catch (error) {
+    console.error("Error queueing async repository analysis:", error.response?.data || error.message);
+    const statusCode = error.response?.status || 500;
+    const detail = error.response?.data?.detail || error.message;
+
+    return res.status(statusCode).json({
+      message: "Failed to queue repository analysis",
+      details: detail,
+    });
+  }
+};
+
+export const getIndexStatus = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    if (!jobId) {
+      return res.status(400).json({ message: "Job ID is required." });
+    }
+
+    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+    const response = await axios.get(
+      `${aiServiceUrl}/github/index-status/${encodeURIComponent(jobId)}`,
+      { headers: getAiServiceHeaders(), timeout: 10000 }
+    );
+
+    return res.status(200).json(response.data);
+  } catch (error) {
+    console.error("Error polling index status:", error.response?.data || error.message);
+    const statusCode = error.response?.status || 500;
+    const detail = error.response?.data?.detail || error.message;
+
+    return res.status(statusCode).json({
+      message: "Failed to poll indexing status",
+      details: detail,
+    });
+  }
+};
+
 

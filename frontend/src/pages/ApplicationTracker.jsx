@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   CheckSquare, Plus, Building2, Calendar, MapPin,
-  ChevronRight, X, ArrowRight, ExternalLink, Trash2, Loader2
+  ChevronRight, X, ArrowRight, ExternalLink, Trash2, Loader2, Search
 } from 'lucide-react';
 import {
   fetchApplicationsFromDB,
@@ -9,17 +9,21 @@ import {
   updateApplicationInDB,
   deleteApplicationFromDB
 } from '../services/api';
+import useDebounce from '../hooks/useDebounce';
 
 export default function ApplicationTracker() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [applications, setApplications] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   const [newCompany, setNewCompany] = useState('');
   const [newRole, setNewRole] = useState('');
   const [newLocation, setNewLocation] = useState('Remote');
   const [newStatus, setNewStatus] = useState('applied');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
 
   const loadApplications = async () => {
     try {
@@ -100,6 +104,16 @@ export default function ApplicationTracker() {
     { key: 'rejected', label: 'Archived / Rejected', color: 'border-t-border text-text-muted' },
   ];
 
+  const filteredApplications = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) return applications;
+    const q = debouncedSearchQuery.toLowerCase();
+    return applications.filter((app) =>
+      (app.company || '').toLowerCase().includes(q) ||
+      (app.role || '').toLowerCase().includes(q) ||
+      (app.location || '').toLowerCase().includes(q)
+    );
+  }, [applications, debouncedSearchQuery]);
+
   return (
     <div className="space-y-8 animate-fade-up">
       {/* 1. Header & Single Coral CTA */}
@@ -123,28 +137,52 @@ export default function ApplicationTracker() {
         </button>
       </div>
 
-      {/* 2. Key Stats Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
-          <span className="text-xs font-semibold text-text-body">Active Applications</span>
-          <p className="text-2xl font-black text-text-dark mt-1">{applications.length}</p>
+      {/* 2. Key Stats Row & Filter Search Bar */}
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
+            <span className="text-xs font-semibold text-text-body">Active Applications</span>
+            <p className="text-2xl font-black text-text-dark mt-1">{applications.length}</p>
+          </div>
+          <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
+            <span className="text-xs font-semibold text-text-body">In Interview Stage</span>
+            <p className="text-2xl font-black text-primary mt-1">
+              {applications.filter((a) => a.status === 'interviewing').length}
+            </p>
+          </div>
+          <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
+            <span className="text-xs font-semibold text-text-body">Offers</span>
+            <p className="text-2xl font-black text-success mt-1">
+              {applications.filter((a) => a.status === 'offer').length}
+            </p>
+          </div>
+          <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
+            <span className="text-xs font-semibold text-text-body">Avg Match Score</span>
+            <p className="text-2xl font-black text-secondary mt-1">88%</p>
+          </div>
         </div>
-        <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
-          <span className="text-xs font-semibold text-text-body">In Interview Stage</span>
-          <p className="text-2xl font-black text-primary mt-1">
-            {applications.filter((a) => a.status === 'interviewing').length}
-          </p>
-        </div>
-        <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
-          <span className="text-xs font-semibold text-text-body">Offers</span>
-          <p className="text-2xl font-black text-success mt-1">
-            {applications.filter((a) => a.status === 'offer').length}
-          </p>
-        </div>
-        <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
-          <span className="text-xs font-semibold text-text-body">Avg Match Score</span>
-          <p className="text-2xl font-black text-secondary mt-1">88%</p>
-        </div>
+
+        {/* Debounced Search Filter */}
+        {applications.length > 0 && (
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by company, role, or location..."
+              className="w-full pl-9 pr-8 py-2 text-xs rounded-xl bg-white border border-border focus:outline-none focus:border-primary/50 shadow-2xs transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-dark"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 3. Trello-Style Kanban Board or Guided Empty State */}
@@ -182,7 +220,8 @@ export default function ApplicationTracker() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
           {columns.map((col) => {
-            const colApps = applications.filter((a) => a.status === col.key);
+            const colApps = filteredApplications.filter((a) => a.status === col.key);
+
 
             return (
               <div

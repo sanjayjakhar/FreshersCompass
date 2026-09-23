@@ -1,6 +1,8 @@
 import express from "express";
 import {
   analyzeRepository,
+  analyzeRepositoryAsync,
+  getIndexStatus,
   chatWithCodebase,
   getRecruiterPitch,
   getInterviewPrep,
@@ -12,6 +14,8 @@ import {
 const router = express.Router();
 
 router.post("/analyze", analyzeRepository);
+router.post("/analyze-async", analyzeRepositoryAsync);
+router.get("/index-status/:jobId", getIndexStatus);
 router.post("/chat", chatWithCodebase);
 router.post("/pitch", getRecruiterPitch);
 router.post("/interview-prep", getInterviewPrep);
@@ -20,4 +24,5 @@ router.post("/profile-readme", generateProfileReadme);
 router.post("/project-readme", generateProjectReadme);
 
 export default router;
+
 

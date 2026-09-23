@@ -6,6 +6,7 @@ import morgan from "morgan";
 import dotenv from "dotenv";
 import multer from "multer";
 import sanitizeInput from "./middleware/sanitize.js";
+import { sessionIsolationMiddleware } from "./middleware/auth.middleware.js";
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ const PORT = process.env.PORT || 5000;
 app.use(express.json());
 app.use(sanitizeInput);
 app.use(cookieParser());
+app.use(sessionIsolationMiddleware);
 app.use(morgan("dev"));
 app.use(
   cors({
@@ -24,10 +26,51 @@ app.use(
   })
 );
 
-// ---------- Health check ----------
+
+// ---------- Health check & AI Diagnostics ----------
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", service: "freshercompass-backend" });
+  res.json({
+    status: "ok",
+    service: "freshercompass-backend",
+    uptime: process.uptime(),
+    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  });
 });
+
+app.get("/api/health/diagnostics", async (req, res) => {
+  const start = Date.now();
+  const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+  let aiStatus = "offline";
+  let aiLatency = null;
+
+  try {
+    const aiResp = await axios.get(`${aiServiceUrl}/health`, { timeout: 4000 });
+    aiLatency = Date.now() - start;
+    aiStatus = aiResp.data?.status === "ok" ? "healthy" : "degraded";
+  } catch (err) {
+    aiStatus = "offline";
+  }
+
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    backend: {
+      status: "healthy",
+      uptimeSeconds: Math.floor(process.uptime()),
+      db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    },
+    aiService: {
+      status: aiStatus,
+      latencyMs: aiLatency,
+      models: {
+        primary: "Google Gemini (gemini-2.5-flash)",
+        fallback: "Groq Cloud (qwen/qwen3.8-27b / gpt-oss-120b)",
+        offlineFallback: "Deterministic Heuristic Parsing Engine",
+      },
+    },
+  });
+});
+
 
 // ---------- Routes ----------
 import authRoutes from "./routes/auth.routes.js";
@@ -37,6 +80,7 @@ import jobRoutes from "./routes/job.routes.js";
 import linkedinRoutes from "./routes/linkedin.routes.js";
 import applicationRoutes from "./routes/application.routes.js";
 import profileRoutes from "./routes/profile.routes.js";
+import interviewRoutes from "./routes/interview.routes.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/resume", resumeRoutes);
@@ -45,6 +89,8 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/linkedin", linkedinRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/interview", interviewRoutes);
+
 
 // ---------- 404 & Global Error Handler ----------
 app.use("/api/*", (req, res) => {

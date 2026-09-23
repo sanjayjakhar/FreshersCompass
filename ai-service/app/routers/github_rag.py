@@ -1,7 +1,8 @@
 import os
+import uuid
 import concurrent.futures
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
 from pydantic import BaseModel
 
 from app.services.github_service import (
@@ -21,6 +22,58 @@ router = APIRouter()
 
 # Cache parsed repository data in memory so subsequent queries don't re-download
 REPO_CACHE: Dict[str, Dict[str, Any]] = {}
+
+# Background indexing jobs registry
+INDEX_JOBS: Dict[str, Dict[str, Any]] = {}
+
+def process_repo_indexing(job_id: str, repo_url: str):
+    """Background worker for repository AST chunking and vector indexing."""
+    try:
+        INDEX_JOBS[job_id]["status"] = "indexing"
+        INDEX_JOBS[job_id]["progress"] = 25
+
+        owner, repo_name = parse_repo_identifier(repo_url)
+        full_name = f"{owner}/{repo_name}".lower()
+
+        repo_data = fetch_repository_data(repo_url)
+        INDEX_JOBS[job_id]["progress"] = 65
+
+        meta = repo_data["metadata"]
+        health = repo_data["health"]
+        file_contents = repo_data["file_contents"]
+
+        chunks = chunk_codebase_files(file_contents)
+        index_repository_chunks(full_name, chunks)
+        INDEX_JOBS[job_id]["progress"] = 90
+
+        pitch_bullets = generate_recruiter_pitch(meta, health)
+
+        result_payload = {
+            "status": "success",
+            "repo_id": full_name,
+            "metadata": meta,
+            "health": health,
+            "total_files_count": repo_data["total_files_count"],
+            "files_sample": repo_data["all_files"][:30],
+            "recruiter_pitch": pitch_bullets,
+            "indexed_chunks_count": len(chunks),
+        }
+
+        REPO_CACHE[full_name] = {
+            "metadata": meta,
+            "health": health,
+            "total_files_count": repo_data["total_files_count"],
+            "all_files": repo_data["all_files"][:50],
+            "recruiter_pitch": pitch_bullets,
+        }
+
+        INDEX_JOBS[job_id]["status"] = "completed"
+        INDEX_JOBS[job_id]["progress"] = 100
+        INDEX_JOBS[job_id]["result"] = result_payload
+    except Exception as err:
+        INDEX_JOBS[job_id]["status"] = "failed"
+        INDEX_JOBS[job_id]["error"] = str(err)
+
 
 class AnalyzeRepoRequest(BaseModel):
     repo_url: str
@@ -109,7 +162,81 @@ async def analyze_repository(
         print(f"Error analyzing repository: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to analyze repository: {str(e)}")
 
+@router.post("/analyze-async")
+async def analyze_repository_async(
+    payload: AnalyzeRepoRequest,
+    background_tasks: BackgroundTasks,
+    x_internal_key: Optional[str] = Header(None)
+):
+    """Offloads repo cloning and vector indexing to background task, returning job ID."""
+    verify_internal_auth(x_internal_key)
+    if not payload.repo_url:
+        raise HTTPException(status_code=400, detail="Repository URL is required")
+
+    owner, repo_name = parse_repo_identifier(payload.repo_url)
+    full_name = f"{owner}/{repo_name}".lower()
+
+    # Fast return if already cached and indexed
+    if full_name in REPO_CACHE and full_name in REPO_VECTOR_STORE:
+        cached = REPO_CACHE[full_name]
+        return {
+            "status": "completed",
+            "progress": 100,
+            "job_id": f"cached_{full_name.replace('/', '_')}",
+            "result": {
+                "status": "success",
+                "repo_id": full_name,
+                "metadata": cached["metadata"],
+                "health": cached["health"],
+                "total_files_count": cached.get("total_files_count", 0),
+                "files_sample": cached.get("all_files", [])[:30],
+                "recruiter_pitch": cached.get("recruiter_pitch", []),
+                "indexed_chunks_count": len(REPO_VECTOR_STORE[full_name].get("chunks", [])),
+            }
+        }
+
+    job_id = str(uuid.uuid4())
+    INDEX_JOBS[job_id] = {
+        "job_id": job_id,
+        "repo_url": payload.repo_url,
+        "full_name": full_name,
+        "status": "queued",
+        "progress": 5,
+        "error": None,
+        "result": None,
+    }
+
+    background_tasks.add_task(process_repo_indexing, job_id, payload.repo_url)
+
+    return {
+        "status": "queued",
+        "job_id": job_id,
+        "repo": full_name,
+        "message": "Repository indexing queued in background. Poll /github/index-status/{job_id} for progress."
+    }
+
+@router.get("/index-status/{job_id}")
+async def get_index_status(
+    job_id: str,
+    x_internal_key: Optional[str] = Header(None)
+):
+    """Poll progress and result of background repository indexing."""
+    verify_internal_auth(x_internal_key)
+
+    job = INDEX_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Indexing job not found")
+
+    return {
+        "job_id": job_id,
+        "status": job["status"],
+        "progress": job.get("progress", 0),
+        "error": job.get("error"),
+        "result": job.get("result"),
+    }
+
 @router.post("/chat")
+
 async def chat_with_codebase(
     payload: ChatQuestionRequest,
     x_internal_key: Optional[str] = Header(None)

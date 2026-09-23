@@ -114,8 +114,19 @@ export default function TopBar({ setMobileOpen }) {
           </div>
         </div>
 
-        {/* Right Side: GitHub Sync Pill + Notifications + Profile Avatar */}
+        {/* Right Side: LLM Telemetry + GitHub Sync Pill + Notifications + Profile Avatar */}
         <div className="flex items-center gap-3">
+
+          {/* Active LLM Engine Telemetry Pill */}
+          <div
+            className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface border border-border text-[11px] font-mono font-medium text-text-dark shadow-2xs"
+            title="Active AI Orchestrator: Google Gemini 2.5 Flash with Groq Qwen/GPT fallback"
+          >
+            <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+            <span className="text-secondary font-bold">AI Engine:</span>
+            <span>Gemini Flash</span>
+          </div>
+
           {/* GitHub Sync Button */}
           <button
             onClick={() => {
@@ -129,6 +140,7 @@ export default function TopBar({ setMobileOpen }) {
                 : 'bg-surface border-border hover:border-primary/40 text-text-body hover:text-text-dark'
             }`}
           >
+
             <span
               className={`w-2 h-2 rounded-full ${
                 connectedUser ? 'bg-success animate-pulse' : 'bg-text-muted'

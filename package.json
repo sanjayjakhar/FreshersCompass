@@ -1,0 +1,25 @@
+{
+  "name": "fresherscompass-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic Career Twin & Code Intelligence for Early-Career Engineers",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "keywords": [
+    "career-twin",
+    "fresher-compass",
+    "ats-resume",
+    "rag",
+    "gemini",
+    "groq"
+  ],
+  "author": "Sanjay Jakhar, Nilesh Kumar",
+  "license": "MIT"
+}

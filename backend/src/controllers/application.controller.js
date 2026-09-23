@@ -1,13 +1,15 @@
 import mongoose from 'mongoose';
 import Application from '../models/Application.model.js';
+import { getEffectiveUserId } from '../middleware/auth.middleware.js';
 
 /**
  * Get all applications for the active user from MongoDB
  */
 export const getApplications = async (req, res) => {
   try {
-    const userId = req.user?.id || 'default_user';
+    const userId = getEffectiveUserId(req);
     let apps = await Application.find({ userId }).sort({ createdAt: -1 });
+
 
     // If none exist yet, seed initial realistic defaults into MongoDB
     if (apps.length === 0) {
@@ -80,8 +82,9 @@ export const getApplications = async (req, res) => {
  */
 export const createApplication = async (req, res) => {
   try {
-    const userId = req.user?.id || 'default_user';
+    const userId = getEffectiveUserId(req);
     const { company, role, location, status, matchScore, appliedDate } = req.body;
+
 
     if (!company || !role) {
       return res.status(400).json({ message: 'Company and Role are required' });
