@@ -64,8 +64,8 @@ app.get("/api/health/diagnostics", async (req, res) => {
       status: aiStatus,
       latencyMs: aiLatency,
       models: {
-        primary: "Google Gemini (gemini-2.5-flash)",
-        fallback: "Groq Cloud (qwen/qwen3.8-27b / gpt-oss-120b)",
+        primary: "Google Gemini (gemini-1.5-flash / gemini-2.0-flash)",
+        fallback: "Groq Cloud (llama-3.3-70b-versatile / llama-3.1-8b-instant)",
         offlineFallback: "Deterministic Heuristic Parsing Engine",
       },
     },

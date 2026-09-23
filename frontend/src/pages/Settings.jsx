@@ -107,7 +107,7 @@ export default function Settings() {
           <div className="bg-white p-3.5 rounded-xl border border-border">
             <span className="text-[11px] font-semibold text-text-muted block">Primary Model</span>
             <span className="text-xs font-bold text-primary font-mono block mt-1">
-              {diagnostics?.aiService?.models?.primary || 'Google Gemini 2.5 Flash'}
+              {diagnostics?.aiService?.models?.primary || 'Google Gemini 1.5 Flash'}
             </span>
             <span className="text-[10px] text-success font-medium mt-1 inline-flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-success"></span> Active Tier 1
@@ -117,7 +117,7 @@ export default function Settings() {
           <div className="bg-white p-3.5 rounded-xl border border-border">
             <span className="text-[11px] font-semibold text-text-muted block">Failover Cloud</span>
             <span className="text-xs font-bold text-secondary font-mono block mt-1">
-              {diagnostics?.aiService?.models?.fallback || 'Groq Qwen 27B / GPT-OSS'}
+              {diagnostics?.aiService?.models?.fallback || 'Groq Llama 3.3 70B / 3.1 8B'}
             </span>
             <span className="text-[10px] text-text-muted font-medium mt-1 inline-flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span> 0ms Standby

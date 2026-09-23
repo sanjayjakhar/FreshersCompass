@@ -303,91 +303,100 @@ export const fetchLiveJobs = async (options = {}) => {
       const now = Date.now();
       const normalizedJobs = [...INDIA_TECH_JOBS_FEED];
 
+      // Fetch external APIs concurrently using Promise.allSettled with responsive 3500ms timeouts
+      const [arbeitnowResult, remotiveResult, jobicyResult] = await Promise.allSettled([
+        axios.get("https://www.arbeitnow.com/api/job-board-api", { timeout: 3500 }),
+        axios.get("https://remotive.com/api/remote-jobs?category=software-dev&limit=20", { timeout: 3500 }),
+        axios.get("https://jobicy.com/api/v2/remote-jobs?count=20&tag=developer", { timeout: 3500 })
+      ]);
 
-  // 1. Fetch from Arbeitnow (European & Global Tech API)
-  try {
-    const arbeitnowRes = await axios.get("https://www.arbeitnow.com/api/job-board-api", { timeout: 7000 });
-    const jobs = arbeitnowRes.data?.data || [];
-    for (const j of jobs.slice(0, 25)) {
-      const tags = (j.tags || []).slice(0, 6);
-      const domain = detectJobDomain(j.title, tags);
-      normalizedJobs.push({
-        id: `ab-${j.slug || Math.random().toString(36).substring(2, 8)}`,
-        title: j.title,
-        company: j.company_name,
-        location: j.location || "Remote",
-        remote: j.remote ?? true,
-        type: (j.title || "").toLowerCase().includes("intern") ? "Internship" : "Full Time",
-        grad_year: ["2024", "2025", "2026"],
-        domain,
-        url: j.url,
-        tags,
-        description: (j.description || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
-        source: "Arbeitnow Global",
-        stipend_salary: "Competitive",
-        posted_at: new Date(j.created_at * 1000 || now).toLocaleDateString(),
-      });
-    }
-  } catch (err) {
-    console.log("Arbeitnow API notice:", err.message);
-  }
+      // 1. Process Arbeitnow results if resolved
+      if (arbeitnowResult.status === "fulfilled") {
+        try {
+          const jobs = arbeitnowResult.value.data?.data || [];
+          for (const j of jobs.slice(0, 25)) {
+            const tags = (j.tags || []).slice(0, 6);
+            const domain = detectJobDomain(j.title, tags);
+            normalizedJobs.push({
+              id: `ab-${j.slug || Math.random().toString(36).substring(2, 8)}`,
+              title: j.title,
+              company: j.company_name,
+              location: j.location || "Remote",
+              remote: j.remote ?? true,
+              type: (j.title || "").toLowerCase().includes("intern") ? "Internship" : "Full Time",
+              grad_year: ["2024", "2025", "2026"],
+              domain,
+              url: j.url,
+              tags,
+              description: (j.description || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
+              source: "Arbeitnow Global",
+              stipend_salary: "Competitive",
+              posted_at: new Date(j.created_at * 1000 || now).toLocaleDateString(),
+            });
+          }
+        } catch (e) {
+          console.log("Arbeitnow parse notice:", e.message);
+        }
+      }
 
-  // 2. Fetch from Remotive (Software Dev Remote API)
-  try {
-    const remotiveRes = await axios.get("https://remotive.com/api/remote-jobs?category=software-dev&limit=20", { timeout: 7000 });
-    const jobs = remotiveRes.data?.jobs || [];
-    for (const j of jobs.slice(0, 20)) {
-      const tags = (j.tags || []).slice(0, 6);
-      const domain = detectJobDomain(j.title, tags);
-      normalizedJobs.push({
-        id: `rm-${j.id || Math.random().toString(36).substring(2, 8)}`,
-        title: j.title,
-        company: j.company_name,
-        location: j.candidate_required_location || "Worldwide Remote",
-        remote: true,
-        type: (j.title || "").toLowerCase().includes("intern") ? "Internship" : "Full Time",
-        grad_year: ["2024", "2025", "2026"],
-        domain,
-        url: j.url,
-        tags,
-        description: (j.description || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
-        source: "Remotive Remote",
-        stipend_salary: j.salary || "Competitive",
-        posted_at: new Date(j.publication_date || now).toLocaleDateString(),
-      });
-    }
-  } catch (err) {
-    console.log("Remotive API notice:", err.message);
-  }
+      // 2. Process Remotive results if resolved
+      if (remotiveResult.status === "fulfilled") {
+        try {
+          const jobs = remotiveResult.value.data?.jobs || [];
+          for (const j of jobs.slice(0, 20)) {
+            const tags = (j.tags || []).slice(0, 6);
+            const domain = detectJobDomain(j.title, tags);
+            normalizedJobs.push({
+              id: `rm-${j.id || Math.random().toString(36).substring(2, 8)}`,
+              title: j.title,
+              company: j.company_name,
+              location: j.candidate_required_location || "Worldwide Remote",
+              remote: true,
+              type: (j.title || "").toLowerCase().includes("intern") ? "Internship" : "Full Time",
+              grad_year: ["2024", "2025", "2026"],
+              domain,
+              url: j.url,
+              tags,
+              description: (j.description || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
+              source: "Remotive Remote",
+              stipend_salary: j.salary || "Competitive",
+              posted_at: new Date(j.publication_date || now).toLocaleDateString(),
+            });
+          }
+        } catch (e) {
+          console.log("Remotive parse notice:", e.message);
+        }
+      }
 
-  // 3. Fetch from Jobicy (Developer Jobs API)
-  try {
-    const jobicyRes = await axios.get("https://jobicy.com/api/v2/remote-jobs?count=20&tag=developer", { timeout: 7000 });
-    const jobs = jobicyRes.data?.jobs || [];
-    for (const j of jobs.slice(0, 20)) {
-      const jobTypeStr = Array.isArray(j.jobType) ? j.jobType.join(" ") : String(j.jobType || "");
-      const tags = (j.jobIndustry || []).slice(0, 5);
-      const domain = detectJobDomain(j.jobTitle, tags);
-      normalizedJobs.push({
-        id: `jc-${j.id || Math.random().toString(36).substring(2, 8)}`,
-        title: j.jobTitle,
-        company: j.companyName,
-        location: j.jobGeo || "Remote",
-        remote: true,
-        type: jobTypeStr.toLowerCase().includes("intern") ? "Internship" : "Full Time",
-        grad_year: ["2024", "2025", "2026"],
-        domain,
-        url: j.url,
-        tags,
-        description: (j.jobExcerpt || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
-        source: "Jobicy Tech",
-        stipend_salary: "Competitive",
-        posted_at: "Recent",
-      });
-    }
-  } catch (err) {
-    console.log("Jobicy API notice:", err.message);
-  }
+      // 3. Process Jobicy results if resolved
+      if (jobicyResult.status === "fulfilled") {
+        try {
+          const jobs = jobicyResult.value.data?.jobs || [];
+          for (const j of jobs.slice(0, 20)) {
+            const jobTypeStr = Array.isArray(j.jobType) ? j.jobType.join(" ") : String(j.jobType || "");
+            const tags = (j.jobIndustry || []).slice(0, 5);
+            const domain = detectJobDomain(j.jobTitle, tags);
+            normalizedJobs.push({
+              id: `jc-${j.id || Math.random().toString(36).substring(2, 8)}`,
+              title: j.jobTitle,
+              company: j.companyName,
+              location: j.jobGeo || "Remote",
+              remote: true,
+              type: jobTypeStr.toLowerCase().includes("intern") ? "Internship" : "Full Time",
+              grad_year: ["2024", "2025", "2026"],
+              domain,
+              url: j.url,
+              tags,
+              description: (j.jobExcerpt || "").replace(/<[^>]*>?/gm, "").slice(0, 300) + "...",
+              source: "Jobicy Tech",
+              stipend_salary: "Competitive",
+              posted_at: "Recent",
+            });
+          }
+        } catch (e) {
+          console.log("Jobicy parse notice:", e.message);
+        }
+      }
 
       return normalizedJobs;
     },

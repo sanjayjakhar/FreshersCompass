@@ -92,6 +92,8 @@ export const uploadResume = async (req, res) => {
 export const getLatestResume = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
+    const resume = await Resume.findOne({ userId }).sort({ updatedAt: -1 });
+
     // Clean Zero-Slate: If user has not uploaded a resume yet, return null
     return res.status(200).json({
       message: resume ? 'Resume fetched from MongoDB' : 'No resume uploaded yet',

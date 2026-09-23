@@ -7,6 +7,30 @@ import {
 } from 'lucide-react';
 import { fetchProfileFromDB } from '../services/api';
 
+const routePreloaders = {
+  '/dashboard': () => import('../pages/Dashboard'),
+  '/career-twin': () => import('../pages/CareerTwin'),
+  '/resume': () => import('../pages/ResumeATS'),
+  '/linkedin': () => import('../pages/LinkedInOptimizer'),
+  '/codebase': () => import('../pages/CodebaseIntelligence'),
+  '/interview': () => import('../pages/AIInterview'),
+  '/jobs': () => import('../pages/JobRecommendations'),
+  '/roadmap': () => import('../pages/SkillRoadmap'),
+  '/applications': () => import('../pages/ApplicationTracker'),
+  '/portfolio': () => import('../pages/PortfolioGenerator'),
+  '/settings': () => import('../pages/Settings'),
+};
+
+const prefetchRoute = (to) => {
+  try {
+    if (routePreloaders[to]) {
+      routePreloaders[to]();
+    }
+  } catch (e) {
+    // Ignore prefetch failures
+  }
+};
+
 export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
   const location = useLocation();
   const [githubUser, setGithubUser] = useState('');
@@ -97,6 +121,8 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
                 key={item.to}
                 to={item.to}
                 onClick={() => setMobileOpen(false)}
+                onMouseEnter={() => prefetchRoute(item.to)}
+                onFocus={() => prefetchRoute(item.to)}
                 title={collapsed ? item.label : undefined}
                 aria-label={item.label}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group relative min-h-[44px] ${

@@ -120,7 +120,7 @@ export default function TopBar({ setMobileOpen }) {
           {/* Active LLM Engine Telemetry Pill */}
           <div
             className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface border border-border text-[11px] font-mono font-medium text-text-dark shadow-2xs"
-            title="Active AI Orchestrator: Google Gemini 2.5 Flash with Groq Qwen/GPT fallback"
+            title="Active AI Orchestrator: Google Gemini 1.5 Flash with Groq Llama 3.3 fallback"
           >
             <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
             <span className="text-secondary font-bold">AI Engine:</span>

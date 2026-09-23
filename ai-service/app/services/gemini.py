@@ -57,12 +57,22 @@ def parse_resume_with_gemini(raw_text: str) -> dict:
     parsed_json_str = None
     provider_used = None
 
-    # 1. Primary: Google Gemini (gemini-2.5-flash)
+    # 1. Primary: Google Gemini (fast models: gemini-1.5-flash / gemini-2.0-flash)
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
         try:
             init_gemini()
-            for model_name in ["gemini-2.5-flash", "gemini-3.5-flash"]:
+            gemini_models = [
+                os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+                "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-flash-latest"
+            ]
+            seen_gemini = set()
+            for model_name in gemini_models:
+                if model_name in seen_gemini:
+                    continue
+                seen_gemini.add(model_name)
                 try:
                     m = genai.GenerativeModel(model_name)
                     resp = m.generate_content(
@@ -71,7 +81,7 @@ def parse_resume_with_gemini(raw_text: str) -> dict:
                             response_mime_type="application/json",
                             temperature=0.2
                         ),
-                        request_options={"timeout": 8}
+                        request_options={"timeout": 6}
                     )
                     if resp and resp.text and resp.text.strip():
                         parsed_json_str = resp.text.strip()
@@ -83,14 +93,23 @@ def parse_resume_with_gemini(raw_text: str) -> dict:
         except Exception as g_err:
             print(f"[Resume Parser] Gemini initialization notice: {g_err}")
 
-    # 2. Secondary Fallback: Groq (Qwen / GPT-OSS)
+    # 2. Secondary Fallback: Groq (Llama 3.3 / Llama 3.1)
     if not parsed_json_str:
         groq_key = os.getenv("GROQ_API_KEY")
         if groq_key:
             try:
                 from groq import Groq
-                client = Groq(api_key=groq_key, timeout=15.0)
-                for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+                client = Groq(api_key=groq_key, timeout=8.0)
+                groq_models = [
+                    os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                    "llama-3.3-70b-versatile",
+                    "llama-3.1-8b-instant"
+                ]
+                seen_groq = set()
+                for model_name in groq_models:
+                    if model_name in seen_groq:
+                        continue
+                    seen_groq.add(model_name)
                     try:
                         chat = client.chat.completions.create(
                             messages=[

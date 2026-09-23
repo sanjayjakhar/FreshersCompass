@@ -72,12 +72,22 @@ Return your response STRICTLY as a JSON object matching this schema:
 }}
 """
 
-    # 1. Try Gemini
+    # 1. Try Gemini (gemini-1.5-flash / gemini-2.0-flash)
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
         try:
             init_gemini()
-            for model_name in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]:
+            gemini_models = [
+                os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+                "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-flash-latest"
+            ]
+            seen_gemini = set()
+            for model_name in gemini_models:
+                if model_name in seen_gemini:
+                    continue
+                seen_gemini.add(model_name)
                 try:
                     m = genai.GenerativeModel(model_name)
                     resp = m.generate_content(
@@ -86,7 +96,7 @@ Return your response STRICTLY as a JSON object matching this schema:
                             response_mime_type="application/json",
                             temperature=0.3
                         ),
-                        request_options={"timeout": 18}
+                        request_options={"timeout": 8}
                     )
                     if resp and resp.text and resp.text.strip():
                         result = json.loads(resp.text.strip())
@@ -98,13 +108,22 @@ Return your response STRICTLY as a JSON object matching this schema:
         except Exception as g_err:
             print(f"[Interview AI] Gemini init notice: {g_err}")
 
-    # 2. Try Groq
+    # 2. Try Groq (Llama 3.3 / Llama 3.1)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:
             from groq import Groq
-            client = Groq(api_key=groq_key, timeout=18.0)
-            for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]:
+            client = Groq(api_key=groq_key, timeout=8.0)
+            groq_models = [
+                os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant"
+            ]
+            seen_groq = set()
+            for model_name in groq_models:
+                if model_name in seen_groq:
+                    continue
+                seen_groq.add(model_name)
                 try:
                     chat = client.chat.completions.create(
                         messages=[

@@ -7,46 +7,113 @@ const api = axios.create({
   withCredentials: true,
 });
 
+// Simple in-memory cache and in-flight promise deduplication to accelerate page opening
+let pendingResumePromise = null;
+let cachedResume = null;
+let resumeCacheExpiry = 0;
+
+let pendingProfilePromise = null;
+let cachedProfile = null;
+let profileCacheExpiry = 0;
+
+export const invalidateResumeCache = () => {
+  cachedResume = null;
+  resumeCacheExpiry = 0;
+  pendingResumePromise = null;
+};
+
+export const invalidateProfileCache = () => {
+  cachedProfile = null;
+  profileCacheExpiry = 0;
+  pendingProfilePromise = null;
+};
+
 // ---------- Resume APIs (MongoDB) ----------
-export const fetchLatestResume = async () => {
-  try {
-    const res = await api.get('/resume/latest');
-    return res.data?.data || null;
-  } catch (err) {
-    console.error('Error fetching resume from MongoDB:', err);
-    return null;
+export const fetchLatestResume = async (force = false) => {
+  const now = Date.now();
+  if (!force && cachedResume !== null && now < resumeCacheExpiry) {
+    return cachedResume;
   }
+
+  if (pendingResumePromise) {
+    return pendingResumePromise;
+  }
+
+  pendingResumePromise = (async () => {
+    try {
+      const res = await api.get('/resume/latest');
+      const data = res.data?.data || null;
+      cachedResume = data;
+      resumeCacheExpiry = Date.now() + 8000; // 8s TTL
+      return data;
+    } catch (err) {
+      console.error('Error fetching resume from MongoDB:', err);
+      return null;
+    } finally {
+      pendingResumePromise = null;
+    }
+  })();
+
+  return pendingResumePromise;
 };
 
 export const uploadResumeToDB = async (file) => {
+  invalidateResumeCache();
   const formData = new FormData();
   formData.append('resume', file);
   const res = await api.post('/resume/upload', formData);
+  cachedResume = res.data?.data;
+  resumeCacheExpiry = Date.now() + 8000;
   return res.data?.data;
 };
 
 export const seedDemoResumeToDB = async () => {
+  invalidateResumeCache();
   const res = await api.post('/resume/demo');
+  cachedResume = res.data?.data;
+  resumeCacheExpiry = Date.now() + 8000;
   return res.data?.data;
 };
 
 export const deleteResumeFromDB = async () => {
+  invalidateResumeCache();
   await api.delete('/resume');
 };
 
 // ---------- Profile & GitHub APIs (MongoDB) ----------
-export const fetchProfileFromDB = async () => {
-  try {
-    const res = await api.get('/profile');
-    return res.data?.data || null;
-  } catch (err) {
-    console.error('Error fetching profile from MongoDB:', err);
-    return null;
+export const fetchProfileFromDB = async (force = false) => {
+  const now = Date.now();
+  if (!force && cachedProfile !== null && now < profileCacheExpiry) {
+    return cachedProfile;
   }
+
+  if (pendingProfilePromise) {
+    return pendingProfilePromise;
+  }
+
+  pendingProfilePromise = (async () => {
+    try {
+      const res = await api.get('/profile');
+      const data = res.data?.data || null;
+      cachedProfile = data;
+      profileCacheExpiry = Date.now() + 8000; // 8s TTL
+      return data;
+    } catch (err) {
+      console.error('Error fetching profile from MongoDB:', err);
+      return null;
+    } finally {
+      pendingProfilePromise = null;
+    }
+  })();
+
+  return pendingProfilePromise;
 };
 
 export const updateProfileInDB = async (profileData) => {
+  invalidateProfileCache();
   const res = await api.post('/profile', profileData);
+  cachedProfile = res.data?.data;
+  profileCacheExpiry = Date.now() + 8000;
   return res.data?.data;
 };
 

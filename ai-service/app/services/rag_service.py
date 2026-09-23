@@ -136,18 +136,28 @@ def execute_codebase_llm(prompt: str) -> Tuple[str, str]:
     Calls primary LLM (Gemini) or secondary LLM (Groq) with the retrieved prompt.
     Returns (answer_text, provider_model_used).
     """
-    # 1. Primary: Gemini (gemini-2.5-flash, gemini-3.5-flash)
+    # 1. Primary: Gemini (gemini-1.5-flash / gemini-2.0-flash)
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
         try:
             init_gemini()
-            for model_name in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]:
+            gemini_models = [
+                os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+                "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-flash-latest"
+            ]
+            seen_gemini = set()
+            for model_name in gemini_models:
+                if model_name in seen_gemini:
+                    continue
+                seen_gemini.add(model_name)
                 try:
                     m = genai.GenerativeModel(model_name)
                     resp = m.generate_content(
                         prompt,
                         generation_config=genai.GenerationConfig(temperature=0.2),
-                        request_options={"timeout": 15}
+                        request_options={"timeout": 8}
                     )
                     if resp and resp.text and resp.text.strip():
                         return resp.text.strip(), f"Google Gemini ({model_name})"
@@ -157,13 +167,22 @@ def execute_codebase_llm(prompt: str) -> Tuple[str, str]:
         except Exception as g_err:
             print(f"[RAG Q&A] Gemini initialization notice: {g_err}")
 
-    # 2. Secondary Fallback: Groq (openai/gpt-oss-20b, qwen/qwen3.8-27b)
+    # 2. Secondary Fallback: Groq (Llama 3.3 / Llama 3.1)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:
             from groq import Groq
-            client = Groq(api_key=groq_key, timeout=15.0)
-            for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+            client = Groq(api_key=groq_key, timeout=8.0)
+            groq_models = [
+                os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant"
+            ]
+            seen_groq = set()
+            for model_name in groq_models:
+                if model_name in seen_groq:
+                    continue
+                seen_groq.add(model_name)
                 try:
                     chat = client.chat.completions.create(
                         messages=[
@@ -290,7 +309,7 @@ def generate_recruiter_pitch(meta: Dict[str, Any], health: Dict[str, Any]) -> Li
 
     try:
         init_gemini()
-        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
         model = genai.GenerativeModel(model_name)
 
         prompt = f"""
@@ -412,7 +431,7 @@ def generate_interview_prep(meta: Dict[str, Any], health: Dict[str, Any], file_s
 
     try:
         init_gemini()
-        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
         model = genai.GenerativeModel(model_name)
 
         prompt = f"""
@@ -478,7 +497,7 @@ Return strictly raw JSON without markdown formatting.
 def generate_profile_readme(username: str, repos: List[Dict[str, Any]], top_skills: List[str], bio: str = "") -> str:
     """Generates a complete production-grade GitHub Profile README.md."""
     init_gemini()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     model = genai.GenerativeModel(model_name)
 
     repo_names = [r.get("name", "") for r in repos[:6] if r.get("name")]
@@ -534,7 +553,7 @@ Return ONLY raw GitHub markdown without surrounding json or backticks.
 def generate_project_readme(repo_name: str, description: str, tech_stack: List[str], health: Dict[str, Any]) -> str:
     """Generates a comprehensive production-grade README.md for a project."""
     init_gemini()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     model = genai.GenerativeModel(model_name)
 
     stack_str = ", ".join(tech_stack) if tech_stack else "React, Node.js, Python, FastAPI"

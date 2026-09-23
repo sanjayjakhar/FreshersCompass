@@ -10,7 +10,17 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
     if gemini_key:
         try:
             init_gemini()
-            for model_name in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]:
+            gemini_models = [
+                os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+                "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-flash-latest"
+            ]
+            seen_gemini = set()
+            for model_name in gemini_models:
+                if model_name in seen_gemini:
+                    continue
+                seen_gemini.add(model_name)
                 try:
                     m = genai.GenerativeModel(model_name)
                     resp = m.generate_content(
@@ -19,7 +29,7 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
                             response_mime_type="application/json",
                             temperature=temperature
                         ),
-                        request_options={"timeout": 15}
+                        request_options={"timeout": 8}
                     )
                     if resp and resp.text and resp.text.strip():
                         return json.loads(resp.text.strip())
@@ -33,8 +43,17 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
     if groq_key:
         try:
             from groq import Groq
-            client = Groq(api_key=groq_key, timeout=15.0)
-            for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+            client = Groq(api_key=groq_key, timeout=8.0)
+            groq_models = [
+                os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant"
+            ]
+            seen_groq = set()
+            for model_name in groq_models:
+                if model_name in seen_groq:
+                    continue
+                seen_groq.add(model_name)
                 try:
                     chat = client.chat.completions.create(
                         messages=[
@@ -67,8 +86,7 @@ def analyze_linkedin_profile(
     identifies missing keywords, and generates AI-optimized headlines and summaries.
     """
     init_gemini()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    model = genai.GenerativeModel(model_name)
+    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
     prompt = f"""
 You are an executive LinkedIn optimization specialist and senior technical recruiter.
@@ -154,8 +172,7 @@ def generate_project_launch_post(
 ) -> Dict[str, Any]:
     """Generates a viral, high-engagement LinkedIn project launch post."""
     init_gemini()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    model = genai.GenerativeModel(model_name)
+    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
     stack_str = ", ".join(tech_stack) if tech_stack else "React, Node.js, Python"
     highlights_str = "\n".join(f"- {h}" for h in (highlights or []))
@@ -201,8 +218,7 @@ def generate_cold_outreach_dms(
 ) -> Dict[str, Any]:
     """Generates 3 customized cold outreach templates for LinkedIn DMs & InMails."""
     init_gemini()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    model = genai.GenerativeModel(model_name)
+    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
     skills_str = ", ".join(top_skills) if top_skills else "React, Node.js, Python, MongoDB"
 

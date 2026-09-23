@@ -168,6 +168,9 @@ function renderInline(str) {
 export default function CodebaseIntelligence() {
   const [repoInput, setRepoInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [indexingProgress, setIndexingProgress] = useState(0);
+  const [indexingStatusMsg, setIndexingStatusMsg] = useState('');
+  const pollingTimerRef = useRef(null);
   const [analysisData, setAnalysisData] = useState(null);
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'health' | 'pitch' | 'readme'
   const [error, setError] = useState(null);
@@ -373,21 +376,31 @@ export default function CodebaseIntelligence() {
     }
   }, [messages, chatLoading, activeTab]);
 
+  // Clean up polling timer on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+    };
+  }, []);
+
   const handleAnalyze = async (urlToAnalyze = null) => {
     const targetUrl = (urlToAnalyze || repoInput).trim();
     if (!targetUrl) return;
 
+    if (pollingTimerRef.current) {
+      clearInterval(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+
     setLoading(true);
     setError(null);
+    setIndexingProgress(15);
+    setIndexingStatusMsg('Connecting to GitHub repository...');
 
-    try {
-      const res = await api.post('/github/analyze', {
-        repo_url: targetUrl
-      });
-
-      const data = res.data.data;
+    const finalizeAnalysis = (data) => {
       setAnalysisData(data);
       setRepoInput(targetUrl);
+      setIndexingProgress(100);
 
       // Initialize chat with warm introductory greeting
       setMessages([
@@ -397,6 +410,72 @@ export default function CodebaseIntelligence() {
           citations: []
         }
       ]);
+      setLoading(false);
+    };
+
+    try {
+      // 1. Dispatch asynchronous ingestion endpoint
+      const res = await api.post('/github/analyze-async', {
+        repo_url: targetUrl
+      });
+
+      // If already cached & indexed in memory, return immediately (<50ms)
+      if (res.data?.status === 'completed' && res.data?.result) {
+        finalizeAnalysis(res.data.result);
+        return;
+      }
+
+      const jobId = res.data?.job_id;
+      if (!jobId) {
+        // Fallback to synchronous analyze if job ID is unavailable
+        const syncRes = await api.post('/github/analyze', { repo_url: targetUrl });
+        finalizeAnalysis(syncRes.data.data);
+        return;
+      }
+
+      // 2. Poll background indexing progress
+      setIndexingProgress(30);
+      setIndexingStatusMsg('Cloning repository & extracting code AST...');
+
+      let attempts = 0;
+      pollingTimerRef.current = setInterval(async () => {
+        attempts += 1;
+        try {
+          const pollRes = await api.get(`/github/index-status/${encodeURIComponent(jobId)}`);
+          const job = pollRes.data;
+
+          if (job?.status === 'completed' && job?.result) {
+            clearInterval(pollingTimerRef.current);
+            pollingTimerRef.current = null;
+            finalizeAnalysis(job.result);
+          } else if (job?.status === 'failed') {
+            clearInterval(pollingTimerRef.current);
+            pollingTimerRef.current = null;
+            setError(job.error || 'Repository analysis failed. Please verify the URL.');
+            setLoading(false);
+          } else {
+            const prog = Math.min(95, Math.max(job.progress || 20, Math.round(attempts * 6) + 20));
+            setIndexingProgress(prog);
+            if (prog < 50) {
+              setIndexingStatusMsg('Extracting AST & parsing codebase files...');
+            } else if (prog < 80) {
+              setIndexingStatusMsg('Chunking code & computing vector embeddings...');
+            } else {
+              setIndexingStatusMsg('Synthesizing recruiter architecture pitch...');
+            }
+          }
+
+          if (attempts > 75) { // 75 * 800ms = 60s timeout
+            clearInterval(pollingTimerRef.current);
+            pollingTimerRef.current = null;
+            setError('Repository indexing timed out. Please try again.');
+            setLoading(false);
+          }
+        } catch (pollErr) {
+          console.error('Polling error:', pollErr);
+        }
+      }, 800);
+
     } catch (err) {
       console.error(err);
       setError(
@@ -404,7 +483,6 @@ export default function CodebaseIntelligence() {
         err.response?.data?.message ||
         'Failed to analyze repository. Check if the repository URL is public and valid.'
       );
-    } finally {
       setLoading(false);
     }
   };
@@ -675,16 +753,35 @@ export default function CodebaseIntelligence() {
           )}
         </div>
 
-        {/* Loading Progress Skeleton */}
+        {/* Live Loading Progress Bar & Status */}
         {loading && (
-          <div className="bg-surface rounded-card border border-border p-10 text-center animate-pulse shadow-2xs mb-8">
-            <div className="w-12 h-12 rounded-card bg-primary-subtle flex items-center justify-center mx-auto mb-4 text-primary">
+          <div className="bg-surface rounded-card border border-border p-8 text-center shadow-2xs mb-8 animate-fade-up">
+            <div className="w-12 h-12 rounded-xl bg-primary-subtle flex items-center justify-center mx-auto mb-4 text-primary">
               <RefreshCw className="h-6 w-6 animate-spin" />
             </div>
-            <h3 className="text-lg font-bold text-primary mb-2">Ingesting and Vectorizing Codebase</h3>
-            <p className="text-sm text-text-body max-w-md mx-auto">
-              Extracting file trees, computing code health metrics, generating vector embeddings, and priming Gemini for RAG queries...
+            <h3 className="text-base font-bold text-text-dark mb-1">
+              Ingesting and Vectorizing Codebase
+            </h3>
+            <p className="text-xs text-text-muted mb-4 max-w-md mx-auto">
+              {indexingStatusMsg || 'Extracting file tree, computing code health, and generating embeddings...'}
             </p>
+
+            {/* Dynamic Progress Bar */}
+            <div className="max-w-md mx-auto">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-text-muted mb-1.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  Real-time Ingestion
+                </span>
+                <span className="font-mono text-primary">{indexingProgress}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-border overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${indexingProgress}%` }}
+                />
+              </div>
+            </div>
           </div>
         )}
 
