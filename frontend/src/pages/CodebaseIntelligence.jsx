@@ -8,7 +8,7 @@ import {
   ChevronRight, ArrowRight, CornerDownLeft, FileText, Download, Rocket,
   Trash2, Info
 } from 'lucide-react';
-import { fetchProfileFromDB, updateProfileInDB } from '../services/api';
+import api, { fetchProfileFromDB, updateProfileInDB } from '../services/api';
 
 // ---------- Circular Animated Health Score Ring ----------
 function ScoreRing({ score, label, sublabel, size = 110, strokeWidth = 8, colorOverride = null }) {
@@ -258,7 +258,7 @@ export default function CodebaseIntelligence() {
         }
       }
 
-      const res = await axios.get(`http://localhost:5000/api/github/user/${encodeURIComponent(uname)}/repos`, {
+      const res = await api.get(`/github/user/${encodeURIComponent(uname)}/repos`, {
         timeout: 10000,
       });
       setSyncedProfile(res.data?.data?.profile || null);
@@ -278,7 +278,7 @@ export default function CodebaseIntelligence() {
 
     setGeneratingProjectReadme(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/github/project-readme', {
+      const res = await api.post('/github/project-readme', {
         repo_url: repoTarget
       });
       setProjectReadmeMarkdown(res.data.markdown);
@@ -294,7 +294,7 @@ export default function CodebaseIntelligence() {
     const uname = syncedProfile?.login || syncUser.trim() || 'sanjayjakhar';
     setGeneratingProfileReadme(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/github/profile-readme', {
+      const res = await api.post('/github/profile-readme', {
         username: uname,
         repos: syncedRepos.length > 0 ? syncedRepos : [{ name: 'FreshersCompass', description: 'AI Career Twin', language: 'JavaScript', stars: 12 }],
         top_skills: ['React', 'Node.js', 'FastAPI', 'Python', 'Tailwind CSS', 'Vector RAG'],
@@ -377,7 +377,7 @@ export default function CodebaseIntelligence() {
     setError(null);
 
     try {
-      const res = await axios.post('http://localhost:5000/api/github/analyze', {
+      const res = await api.post('/github/analyze', {
         repo_url: targetUrl
       });
 
@@ -421,7 +421,7 @@ export default function CodebaseIntelligence() {
         content: m.content
       }));
 
-      const res = await axios.post('http://localhost:5000/api/github/chat', {
+      const res = await api.post('/github/chat', {
         repo_url: analysisData.metadata.html_url || repoInput,
         question: q,
         history

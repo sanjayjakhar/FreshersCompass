@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import morgan from "morgan";
 import dotenv from "dotenv";
+import multer from "multer";
 import sanitizeInput from "./middleware/sanitize.js";
 
 dotenv.config();
@@ -44,6 +45,34 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/linkedin", linkedinRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/profile", profileRoutes);
+
+// ---------- 404 & Global Error Handler ----------
+app.use("/api/*", (req, res) => {
+  res.status(404).json({ message: `API route not found: ${req.method} ${req.originalUrl}` });
+});
+
+app.use((err, req, res, _next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        message: "File size exceeds limit (maximum 5MB allowed)",
+        error: err.message,
+      });
+    }
+    return res.status(400).json({ message: "File upload error", error: err.message });
+  }
+
+  if (err.message && err.message.includes("Invalid file type")) {
+    return res.status(400).json({ message: err.message });
+  }
+
+  console.error("Unhandled Server Error:", err);
+  const status = err.status || err.statusCode || 500;
+  return res.status(status).json({
+    message: err.message || "Internal server error",
+    ...(process.env.NODE_ENV !== "production" && { details: err.stack }),
+  });
+});
 
 // ---------- Database connection ----------
 const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/FreshersCompass";

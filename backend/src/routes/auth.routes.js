@@ -1,5 +1,6 @@
 import express from 'express';
 import { githubAuthCallback, logout, me } from '../controllers/auth.controller.js';
+import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
@@ -7,6 +8,6 @@ const router = express.Router();
 router.get('/github/callback', githubAuthCallback);
 
 router.post('/logout', logout);
-router.get('/me', me); // Requires auth middleware
+router.get('/me', authMiddleware, me);
 
 export default router;

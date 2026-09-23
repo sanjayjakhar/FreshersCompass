@@ -75,4 +75,5 @@ export const deleteApplicationFromDB = async (id) => {
   await api.delete(`/applications/${id}`);
 };
 
+export { API_BASE, api };
 export default api;

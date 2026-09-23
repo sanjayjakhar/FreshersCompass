@@ -8,7 +8,7 @@ import {
   ArrowUpRight, ChevronDown, FileText, Linkedin, UserCheck, X, Plus,
   Layers, ArrowLeftRight, Compass, ArrowRight
 } from 'lucide-react';
-import { fetchLatestResume, fetchProfileFromDB } from '../services/api';
+import api, { fetchLatestResume, fetchProfileFromDB } from '../services/api';
 
 const TRACK_PRESETS = [
   {
@@ -197,7 +197,7 @@ export default function JobRecommendations() {
     setError(null);
 
     try {
-      const res = await axios.post('http://localhost:5000/api/jobs/recommendations', {
+      const res = await api.post('/jobs/recommendations', {
         user_skills: skills,
         grad_year: grad,
         type,

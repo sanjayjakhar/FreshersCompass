@@ -7,7 +7,7 @@ import {
   Send, MessageSquare, Rocket, Github, CheckCircle2, UserCheck,
   Share2, FileText, ArrowUpRight, Briefcase
 } from 'lucide-react';
-import { fetchProfileFromDB, updateProfileInDB } from '../services/api';
+import api, { fetchProfileFromDB, updateProfileInDB } from '../services/api';
 
 function VisibilityGauge({ score, size = 110, strokeWidth = 8 }) {
   const radius = (size - strokeWidth) / 2;
@@ -147,7 +147,7 @@ export default function LinkedInOptimizer() {
     setError(null);
 
     try {
-      const res = await axios.post('http://localhost:5000/api/linkedin/fetch-profile', {
+      const res = await api.post('/linkedin/fetch-profile', {
         identifier: linkedinInput.trim(),
       });
 
@@ -170,7 +170,7 @@ export default function LinkedInOptimizer() {
       setFetchingProfile(true);
       setError(null);
       const targetUser = (connectedGithubUser || 'sanjayjakhar').trim().replace(/^@/, '');
-      const res = await axios.get(`http://localhost:5000/api/github/user/${encodeURIComponent(targetUser)}/repos`);
+      const res = await api.get(`/github/user/${encodeURIComponent(targetUser)}/repos`);
       const profile = res.data?.data?.profile;
       const repos = res.data?.data?.repos || [];
 
@@ -203,7 +203,7 @@ export default function LinkedInOptimizer() {
     setError(null);
 
     try {
-      const res = await axios.post('http://localhost:5000/api/linkedin/optimize', {
+      const res = await api.post('/linkedin/optimize', {
         headline,
         about,
         target_role: targetRole,
@@ -247,7 +247,7 @@ export default function LinkedInOptimizer() {
 
     try {
       const stackList = postTechStack.split(',').map((s) => s.trim()).filter(Boolean);
-      const res = await axios.post('http://localhost:5000/api/linkedin/launch-post', {
+      const res = await api.post('/linkedin/launch-post', {
         repo_name: postRepoName,
         description: postDescription,
         tech_stack: stackList,
@@ -268,7 +268,7 @@ export default function LinkedInOptimizer() {
 
     try {
       const skillsList = outreachSkills.split(',').map((s) => s.trim()).filter(Boolean);
-      const res = await axios.post('http://localhost:5000/api/linkedin/cold-outreach', {
+      const res = await api.post('/linkedin/cold-outreach', {
         candidate_name: candidateName,
         target_role: outreachRole,
         college: outreachCollege,
