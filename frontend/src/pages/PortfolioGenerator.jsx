@@ -3,7 +3,7 @@ import {
   Globe, Copy, Check, Eye, ExternalLink, Sparkles,
   Github, Mail, Code2, ArrowUpRight
 } from 'lucide-react';
-import { fetchLatestResume, fetchProfileFromDB } from '../services/api';
+import { fetchLatestResume, fetchProfileFromDB, updateProfileInDB } from '../services/api';
 
 export default function PortfolioGenerator() {
   const [name, setName] = useState('Sanjay Jakhar');
@@ -16,6 +16,7 @@ export default function PortfolioGenerator() {
   const [featuredProject, setFeaturedProject] = useState('InternOps Platform');
   const [projectTech, setProjectTech] = useState('Node.js, Fastify, PostgreSQL, React, Vite');
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const loadProfileData = async () => {
@@ -34,6 +35,8 @@ export default function PortfolioGenerator() {
           if (prof.headline) setHeadline(prof.headline);
           if (prof.bio) setBio(prof.bio);
           if (prof.github_username) setGithubUser(prof.github_username);
+          if (prof.featured_project) setFeaturedProject(prof.featured_project);
+          if (prof.project_tech) setProjectTech(prof.project_tech);
         }
       } catch (e) {
         console.error('Error fetching portfolio data from MongoDB:', e);
@@ -42,15 +45,35 @@ export default function PortfolioGenerator() {
     loadProfileData();
   }, []);
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(`https://fresherscompass.dev/p/${githubUser || 'sanjay'}`);
+  const publicUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/p/${githubUser || 'sanjay'}`
+    : `https://fresherscompass.dev/p/${githubUser || 'sanjay'}`;
+
+  const handleCopyLink = async () => {
+    try {
+      setSaving(true);
+      await updateProfileInDB({
+        candidate_name: name,
+        headline,
+        bio,
+        github_username: githubUser,
+        featured_project: featuredProject,
+        project_tech: projectTech,
+      });
+    } catch (err) {
+      console.warn('Could not save to MongoDB during copy:', err);
+    } finally {
+      setSaving(false);
+    }
+
+    navigator.clipboard.writeText(publicUrl);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 2500);
   };
 
   return (
     <div className="space-y-8 animate-fade-up">
-      {/* 1. Header & Single Coral CTA */}
+      {/* 1. Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-primary tracking-tight">
@@ -61,23 +84,38 @@ export default function PortfolioGenerator() {
           </p>
         </div>
 
-        {/* Single Coral CTA (#D85A30) */}
-        <button
-          onClick={handleCopyLink}
-          className="btn-accent text-xs font-bold py-2.5 px-4 self-start sm:self-auto"
-        >
-          {copied ? (
-            <>
-              <Check className="h-4 w-4" />
-              <span>Link Copied to Clipboard</span>
-            </>
-          ) : (
-            <>
-              <Copy className="h-4 w-4" />
-              <span>Publish & Copy Live Link</span>
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* View Live Preview Button */}
+          <a
+            href={`/p/${githubUser || 'sanjay'}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-border bg-white text-xs font-bold text-text-dark hover:bg-surface transition shadow-2xs"
+          >
+            <Eye className="h-4 w-4 text-primary" />
+            <span>Open Public Preview</span>
+            <ExternalLink className="h-3 w-3 text-text-muted" />
+          </a>
+
+          {/* Single Coral CTA (#D85A30) */}
+          <button
+            onClick={handleCopyLink}
+            disabled={saving}
+            className="btn-accent text-xs font-bold py-2.5 px-4"
+          >
+            {copied ? (
+              <>
+                <Check className="h-4 w-4" />
+                <span>Link Copied to Clipboard</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-4 w-4" />
+                <span>{saving ? 'Publishing...' : 'Publish & Copy Live Link'}</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* 2. Key Stats Row */}
@@ -86,7 +124,14 @@ export default function PortfolioGenerator() {
           <span className="text-xs font-semibold text-text-body">Public URL</span>
           <div className="flex items-center gap-1.5 mt-2 text-xs font-mono text-primary font-bold truncate">
             <Globe className="h-3.5 w-3.5 shrink-0" />
-            <span>fresherscompass.dev/p/{githubUser || 'sanjay'}</span>
+            <a
+              href={`/p/${githubUser || 'sanjay'}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline truncate"
+            >
+              /p/{githubUser || 'sanjay'}
+            </a>
           </div>
           <p className="text-[11px] text-text-muted mt-2">Instant edge deployment ready</p>
         </div>

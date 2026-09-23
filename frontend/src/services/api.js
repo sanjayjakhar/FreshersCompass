@@ -50,6 +50,16 @@ export const updateProfileInDB = async (profileData) => {
   return res.data?.data;
 };
 
+export const fetchPublicProfile = async (username) => {
+  try {
+    const res = await api.get(`/profile/public/${encodeURIComponent(username)}`);
+    return res.data?.data || null;
+  } catch (err) {
+    console.error('Error fetching public profile:', err);
+    return null;
+  }
+};
+
 // ---------- Application Tracker APIs (MongoDB) ----------
 export const fetchApplicationsFromDB = async () => {
   try {
