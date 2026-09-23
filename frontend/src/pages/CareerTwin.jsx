@@ -46,21 +46,26 @@ export default function CareerTwin() {
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  // Aggregated scores
-  const atsScore = resumeData?.ats_score || 72;
-  const codeHealthScore = githubUser ? 84 : 45;
-  const interviewScore = 76;
-  const skillRoadmapScore = 70;
-  const overallReadiness = Math.round(
-    atsScore * 0.3 + codeHealthScore * 0.3 + interviewScore * 0.25 + skillRoadmapScore * 0.15
-  );
+  // Aggregated scores from actual user data
+  const atsScore = resumeData?.ats_score || 0;
+  const codeHealthScore = githubUser ? (profileData?.competency_scores?.code || 80) : 0;
+  const interviewScore = profileData?.competency_scores?.interview || 0;
+  const skillRoadmapScore = profileData?.competency_scores?.roadmap || (resumeData ? 60 : 0);
+  const pipelineVelocity = profileData?.competency_scores?.velocity || (resumeData ? 75 : 0);
+
+  const hasAnyActivity = Boolean(resumeData || githubUser || interviewScore > 0);
+  const overallReadiness = hasAnyActivity
+    ? Math.round(
+        atsScore * 0.3 + codeHealthScore * 0.3 + interviewScore * 0.25 + skillRoadmapScore * 0.15
+      )
+    : 0;
 
   const competencyDimensions = [
     { name: 'Resume & Storytelling', score: atsScore, source: 'Resume & ATS', route: '/resume' },
     { name: 'Code Quality & Git Depth', score: codeHealthScore, source: 'GitHub Analyzer', route: '/codebase' },
     { name: 'Technical Interview Articulation', score: interviewScore, source: 'AI Interview', route: '/interview' },
     { name: 'Roadmap Milestone Mastery', score: skillRoadmapScore, source: 'Skill Roadmap', route: '/roadmap' },
-    { name: 'Application Pipeline Velocity', score: 80, source: 'Tracker', route: '/applications' },
+    { name: 'Application Pipeline Velocity', score: pipelineVelocity, source: 'Tracker', route: '/applications' },
   ];
 
   return (

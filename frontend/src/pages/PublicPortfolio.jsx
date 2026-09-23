@@ -18,7 +18,7 @@ export default function PublicPortfolio() {
     const loadProfile = async () => {
       setLoading(true);
       try {
-        const data = await fetchPublicProfile(username || 'sanjay');
+        const data = await fetchPublicProfile(username || 'developer');
         if (isMounted) {
           setProfile(data);
         }

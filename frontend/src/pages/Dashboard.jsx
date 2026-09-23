@@ -3,24 +3,32 @@ import { Link } from 'react-router-dom';
 import {
   Sparkles, FileText, Code2, Mic, Briefcase, Compass,
   CheckSquare, ArrowRight, TrendingUp, AlertTriangle,
-  CheckCircle2, Clock, ChevronRight, Activity, ArrowUpRight
+  CheckCircle2, Clock, ChevronRight, Activity, ArrowUpRight,
+  ShieldCheck, Circle
 } from 'lucide-react';
-import { fetchLatestResume, fetchProfileFromDB } from '../services/api';
+import { fetchLatestResume, fetchProfileFromDB, fetchApplicationsFromDB } from '../services/api';
 
 export default function Dashboard() {
   const [resumeData, setResumeData] = useState(null);
+  const [profileData, setProfileData] = useState(null);
   const [githubUser, setGithubUser] = useState('');
+  const [applicationsCount, setApplicationsCount] = useState(0);
 
   useEffect(() => {
     // Load state directly from MongoDB collections
     async function loadDataFromDB() {
       try {
-        const [resume, profile] = await Promise.all([
+        const [resume, profile, apps] = await Promise.all([
           fetchLatestResume(),
           fetchProfileFromDB(),
+          fetchApplicationsFromDB(),
         ]);
         if (resume) setResumeData(resume);
-        if (profile?.github_username) setGithubUser(profile.github_username);
+        if (profile) {
+          setProfileData(profile);
+          if (profile.github_username) setGithubUser(profile.github_username);
+        }
+        if (Array.isArray(apps)) setApplicationsCount(apps.length);
       } catch (e) {
         console.error('Failed to load dashboard data from MongoDB', e);
       }
@@ -35,14 +43,24 @@ export default function Dashboard() {
     return () => window.removeEventListener('freshercompass_profile_updated', handleSync);
   }, []);
 
-  // Compute Career Readiness score combining resume, github, interview
-  const atsScore = resumeData?.ats_score || 72;
-  const githubScore = githubUser ? 84 : 40;
-  const interviewScore = 78;
-  const overallReadiness = Math.round((atsScore * 0.4) + (githubScore * 0.35) + (interviewScore * 0.25));
+  // Compute Career Readiness score genuinely from user actions
+  const atsScore = resumeData?.ats_score || 0;
+  const githubScore = githubUser ? (profileData?.competency_scores?.code || 80) : 0;
+  const interviewScore = profileData?.competency_scores?.interview || 0;
 
-  const skillGapsCount = 3;
-  const applicationsCount = 5;
+  const hasAnyActivity = Boolean(resumeData || githubUser || interviewScore > 0);
+  const overallReadiness = hasAnyActivity
+    ? Math.round((atsScore * 0.4) + (githubScore * 0.35) + (interviewScore * 0.25))
+    : 0;
+
+  const skillGapsCount = resumeData?.missing_skills?.length || (resumeData ? 2 : 0);
+
+  // Onboarding milestones
+  const stepsDone = [
+    Boolean(resumeData),
+    Boolean(githubUser),
+    interviewScore > 0,
+  ].filter(Boolean).length;
 
   return (
     <div className="space-y-8 animate-fade-up">
@@ -103,9 +121,21 @@ export default function Dashboard() {
             </div>
 
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-secondary/10 text-secondary text-xs font-bold mb-2">
-                <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-                AI Twin Benchmark: Market Ready
+              <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold mb-2 ${
+                overallReadiness === 0
+                  ? 'bg-text-muted/10 text-text-muted'
+                  : overallReadiness >= 75
+                  ? 'bg-secondary/10 text-secondary'
+                  : 'bg-primary/10 text-primary'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  overallReadiness === 0 ? 'bg-text-muted' : 'bg-secondary animate-pulse'
+                }`} />
+                {overallReadiness === 0
+                  ? 'AI Twin Benchmark: Awaiting Initial Setup'
+                  : overallReadiness >= 75
+                  ? 'AI Twin Benchmark: Market Ready'
+                  : 'AI Twin Benchmark: In Progress'}
               </div>
               <h2 className="text-lg sm:text-xl font-bold text-text-dark">Overall Career Readiness</h2>
               <p className="text-xs sm:text-sm text-text-body mt-1 max-w-md">
@@ -159,7 +189,115 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 2. Responsive Grid of 4 Key Stat Cards */}
+      {/* 2. Getting Started / Onboarding Checklist (Zero-State Guidance) */}
+      <div className="bg-white rounded-card border border-border p-6 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold mb-1">
+              <Sparkles className="h-3 w-3" />
+              <span>Getting Started Checklist</span>
+            </div>
+            <h3 className="text-base font-extrabold text-text-dark">
+              {stepsDone === 3
+                ? '🎉 All Core Milestones Complete!'
+                : `Career Twin Setup: ${stepsDone}/3 Completed`}
+            </h3>
+            <p className="text-xs text-text-muted mt-0.5">
+              Complete these 3 foundational actions to benchmark your Career Twin from zero to market ready.
+            </p>
+          </div>
+          <div className="text-left sm:text-right shrink-0">
+            <span className="text-sm font-mono font-bold text-primary">
+              {Math.round((stepsDone / 3) * 100)}% Complete
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          {/* Step 1: Upload Resume */}
+          <div className={`p-4 rounded-xl border transition-all ${
+            resumeData ? 'bg-success/5 border-success/30' : 'bg-surface border-border hover:border-primary/40'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Step 1</span>
+              {resumeData ? (
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              ) : (
+                <span className="text-[10px] font-bold text-accent px-2 py-0.5 rounded bg-accent/10">+40% Boost</span>
+              )}
+            </div>
+            <h4 className="text-xs font-bold text-text-dark mt-2">Upload Resume & ATS</h4>
+            <p className="text-[11px] text-text-body mt-1">
+              {resumeData ? `ATS Score: ${atsScore}% verified` : 'Upload your PDF/DOCX resume to detect technical skills.'}
+            </p>
+            {!resumeData ? (
+              <Link to="/resume" className="inline-flex items-center gap-1 text-xs font-bold text-primary mt-3 hover:underline">
+                <span>Upload Resume</span>
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            ) : (
+              <span className="text-[11px] font-bold text-success mt-3 inline-block">✓ Completed</span>
+            )}
+          </div>
+
+          {/* Step 2: Connect GitHub */}
+          <div className={`p-4 rounded-xl border transition-all ${
+            githubUser ? 'bg-success/5 border-success/30' : 'bg-surface border-border hover:border-primary/40'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Step 2</span>
+              {githubUser ? (
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              ) : (
+                <span className="text-[10px] font-bold text-accent px-2 py-0.5 rounded bg-accent/10">+35% Boost</span>
+              )}
+            </div>
+            <h4 className="text-xs font-bold text-text-dark mt-2">Connect GitHub Profile</h4>
+            <p className="text-[11px] text-text-body mt-1">
+              {githubUser ? `@${githubUser} repositories synced` : 'Sync public repositories to verify code health & commits.'}
+            </p>
+            {!githubUser ? (
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('freshercompass_open_github_modal'))}
+                className="inline-flex items-center gap-1 text-xs font-bold text-primary mt-3 hover:underline text-left"
+              >
+                <span>Connect GitHub</span>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            ) : (
+              <span className="text-[11px] font-bold text-success mt-3 inline-block">✓ Connected</span>
+            )}
+          </div>
+
+          {/* Step 3: Mock Interview */}
+          <div className={`p-4 rounded-xl border transition-all ${
+            interviewScore > 0 ? 'bg-success/5 border-success/30' : 'bg-surface border-border hover:border-primary/40'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">Step 3</span>
+              {interviewScore > 0 ? (
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              ) : (
+                <span className="text-[10px] font-bold text-accent px-2 py-0.5 rounded bg-accent/10">+25% Boost</span>
+              )}
+            </div>
+            <h4 className="text-xs font-bold text-text-dark mt-2">Take AI Mock Interview</h4>
+            <p className="text-[11px] text-text-body mt-1">
+              {interviewScore > 0 ? `Latest Score: ${interviewScore}% verified` : 'Practice senior engineering questions with AI feedback.'}
+            </p>
+            {interviewScore === 0 ? (
+              <Link to="/interview" className="inline-flex items-center gap-1 text-xs font-bold text-primary mt-3 hover:underline">
+                <span>Start Interview</span>
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            ) : (
+              <span className="text-[11px] font-bold text-success mt-3 inline-block">✓ Completed</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Responsive Grid of 4 Key Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* ATS Score */}
         <Link
@@ -177,7 +315,7 @@ export default function Dashboard() {
             <span className="text-xs font-medium text-text-muted">/ 100</span>
           </div>
           <p className="text-[11px] text-text-muted mt-2">
-            {resumeData ? 'Calculated from uploaded resume' : 'Sample preview (Click to upload)'}
+            {resumeData ? 'Calculated from uploaded resume' : 'No resume uploaded yet (Click to upload)'}
           </p>
         </Link>
 
@@ -194,9 +332,13 @@ export default function Dashboard() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-black text-warning">{skillGapsCount}</span>
-            <span className="text-xs font-medium text-warning font-semibold">Gaps identified</span>
+            <span className="text-xs font-medium text-warning font-semibold">
+              {skillGapsCount > 0 ? 'Gaps identified' : 'None detected'}
+            </span>
           </div>
-          <p className="text-[11px] text-text-muted mt-2">System Design, CI/CD, Docker</p>
+          <p className="text-[11px] text-text-muted mt-2">
+            {resumeData ? 'View customized skill gaps roadmap' : 'Upload resume to detect skill gaps'}
+          </p>
         </Link>
 
         {/* Applications in Progress */}
@@ -214,7 +356,9 @@ export default function Dashboard() {
             <span className="text-3xl font-black text-primary">{applicationsCount}</span>
             <span className="text-xs font-medium text-text-muted">in pipeline</span>
           </div>
-          <p className="text-[11px] text-text-muted mt-2">2 interviewing, 3 applied</p>
+          <p className="text-[11px] text-text-muted mt-2">
+            {applicationsCount > 0 ? `${applicationsCount} applications tracked` : '0 active applications (Clean slate)'}
+          </p>
         </Link>
 
         {/* Upcoming Interview Practice */}
@@ -229,9 +373,13 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-black text-secondary">Ready</span>
+            <span className="text-3xl font-black text-secondary">
+              {interviewScore > 0 ? `${interviewScore}%` : 'Ready'}
+            </span>
           </div>
-          <p className="text-[11px] text-text-muted mt-2">Resume & RAG tailored questions</p>
+          <p className="text-[11px] text-text-muted mt-2">
+            {interviewScore > 0 ? 'Dynamic evaluation completed' : 'Practice technical depth room'}
+          </p>
         </Link>
       </div>
 

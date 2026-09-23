@@ -11,62 +11,11 @@ export const getApplications = async (req, res) => {
     let apps = await Application.find({ userId }).sort({ createdAt: -1 });
 
 
-    // If none exist yet, seed initial realistic defaults into MongoDB
-    if (apps.length === 0) {
-      const defaultApps = [
-        {
-          userId,
-          company: 'Razorpay',
-          role: 'Frontend Engineer - Intern to PPO',
-          location: 'Bengaluru, India (Hybrid)',
-          status: 'interviewing',
-          appliedDate: '2026-09-14',
-          matchScore: 92,
-        },
-        {
-          userId,
-          company: 'Postman',
-          role: 'Backend API Developer',
-          location: 'Bengaluru, India (Remote)',
-          status: 'interviewing',
-          appliedDate: '2026-09-17',
-          matchScore: 88,
-        },
-        {
-          userId,
-          company: 'Zerodha',
-          role: 'Junior Fullstack Engineer',
-          location: 'Bengaluru, India',
-          status: 'applied',
-          appliedDate: '2026-09-19',
-          matchScore: 85,
-        },
-        {
-          userId,
-          company: 'CRED',
-          role: 'Software Engineer - Platform',
-          location: 'Bengaluru, India',
-          status: 'applied',
-          appliedDate: '2026-09-20',
-          matchScore: 79,
-        },
-        {
-          userId,
-          company: 'Zomato',
-          role: 'Associate Software Developer',
-          location: 'Gurugram, India',
-          status: 'offer',
-          appliedDate: '2026-08-28',
-          matchScore: 94,
-        },
-      ];
-
-      apps = await Application.insertMany(defaultApps);
-    }
-
+    // Clean Zero-Slate: Do NOT auto-seed fake applications.
+    // If the user has not added any applications, return empty list []
     return res.status(200).json({
       message: 'Applications retrieved from MongoDB',
-      data: apps,
+      data: apps || [],
     });
   } catch (error) {
     console.error('Error fetching applications from MongoDB:', error.message);
@@ -74,6 +23,88 @@ export const getApplications = async (req, res) => {
       message: 'Failed to retrieve applications',
       details: error.message,
     });
+  }
+};
+
+/**
+ * Explicitly seed realistic sample applications for testing or evaluation demo
+ */
+export const seedDemoApplications = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    // Clear existing for fresh sample
+    await Application.deleteMany({ userId });
+
+    const sampleApps = [
+      {
+        userId,
+        company: 'Razorpay',
+        role: 'Frontend Engineer - Intern',
+        location: 'Bengaluru, India (Hybrid)',
+        status: 'interviewing',
+        appliedDate: new Date(Date.now() - 10 * 86400000).toISOString().split('T')[0],
+        matchScore: 92,
+      },
+      {
+        userId,
+        company: 'Postman',
+        role: 'Backend API Developer',
+        location: 'Bengaluru, India (Remote)',
+        status: 'interviewing',
+        appliedDate: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
+        matchScore: 88,
+      },
+      {
+        userId,
+        company: 'Zerodha',
+        role: 'Junior Fullstack Engineer',
+        location: 'Bengaluru, India',
+        status: 'applied',
+        appliedDate: new Date(Date.now() - 5 * 86400000).toISOString().split('T')[0],
+        matchScore: 85,
+      },
+      {
+        userId,
+        company: 'CRED',
+        role: 'Software Engineer - Platform',
+        location: 'Bengaluru, India',
+        status: 'applied',
+        appliedDate: new Date(Date.now() - 4 * 86400000).toISOString().split('T')[0],
+        matchScore: 79,
+      },
+      {
+        userId,
+        company: 'Zomato',
+        role: 'Associate Software Developer',
+        location: 'Gurugram, India',
+        status: 'offer',
+        appliedDate: new Date(Date.now() - 25 * 86400000).toISOString().split('T')[0],
+        matchScore: 94,
+      },
+    ];
+
+    const seeded = await Application.insertMany(sampleApps);
+    return res.status(201).json({
+      message: 'Sample demo applications loaded successfully',
+      data: seeded,
+    });
+  } catch (error) {
+    console.error('Error seeding demo applications:', error.message);
+    return res.status(500).json({ message: 'Failed to seed demo applications', details: error.message });
+  }
+};
+
+/**
+ * Reset all applications to clean zero slate
+ */
+export const resetApplications = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    await Application.deleteMany({ userId });
+    return res.status(200).json({ message: 'All applications cleared to clean zero slate' });
+  } catch (error) {
+    console.error('Error clearing applications:', error.message);
+    return res.status(500).json({ message: 'Failed to clear applications', details: error.message });
   }
 };
 

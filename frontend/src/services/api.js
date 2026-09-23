@@ -85,6 +85,15 @@ export const deleteApplicationFromDB = async (id) => {
   await api.delete(`/applications/${id}`);
 };
 
+export const seedDemoApplicationsToDB = async () => {
+  const res = await api.post('/applications/seed-demo');
+  return res.data?.data || [];
+};
+
+export const resetApplicationsInDB = async () => {
+  await api.post('/applications/reset');
+};
+
 // ---------- AI Interview APIs ----------
 export const evaluateInterviewSession = async (responses, role) => {
   const res = await api.post('/interview/evaluate', { responses, role });

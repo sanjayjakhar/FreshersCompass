@@ -1,13 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   CheckSquare, Plus, Building2, Calendar, MapPin,
-  ChevronRight, X, ArrowRight, ExternalLink, Trash2, Loader2, Search
+  ChevronRight, X, ArrowRight, ExternalLink, Trash2, Loader2, Search,
+  Sparkles, RotateCcw
 } from 'lucide-react';
 import {
   fetchApplicationsFromDB,
   createApplicationInDB,
   updateApplicationInDB,
-  deleteApplicationFromDB
+  deleteApplicationFromDB,
+  seedDemoApplicationsToDB,
+  resetApplicationsInDB
 } from '../services/api';
 import useDebounce from '../hooks/useDebounce';
 
@@ -97,6 +100,31 @@ export default function ApplicationTracker() {
     }
   };
 
+  const handleLoadSample = async () => {
+    try {
+      setLoading(true);
+      const data = await seedDemoApplicationsToDB();
+      setApplications(data);
+    } catch (err) {
+      console.error('Failed to seed demo applications:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetSlate = async () => {
+    if (!window.confirm('Are you sure you want to clear all applications back to a clean slate?')) return;
+    try {
+      setLoading(true);
+      await resetApplicationsInDB();
+      setApplications([]);
+    } catch (err) {
+      console.error('Failed to clear applications:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const columns = [
     { key: 'applied', label: 'Applied', color: 'border-t-warning text-warning' },
     { key: 'interviewing', label: 'Interviewing', color: 'border-t-primary text-primary' },
@@ -116,7 +144,7 @@ export default function ApplicationTracker() {
 
   return (
     <div className="space-y-8 animate-fade-up">
-      {/* 1. Header & Single Coral CTA */}
+      {/* 1. Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-primary tracking-tight">
@@ -127,14 +155,27 @@ export default function ApplicationTracker() {
           </p>
         </div>
 
-        {/* Single Coral CTA (#D85A30) */}
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="btn-accent text-xs font-bold py-2.5 px-4 self-start sm:self-auto"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add New Application</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {applications.length > 0 && (
+            <button
+              onClick={handleResetSlate}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold text-text-muted hover:text-danger hover:border-danger/30 transition shadow-2xs"
+              title="Clear all applications back to 0"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>Reset Slate</span>
+            </button>
+          )}
+
+          {/* Single Coral CTA (#D85A30) */}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn-accent text-xs font-bold py-2.5 px-4"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add New Application</span>
+          </button>
+        </div>
       </div>
 
       {/* 2. Key Stats Row & Filter Search Bar */}
@@ -214,6 +255,13 @@ export default function ApplicationTracker() {
             >
               <Plus className="h-4 w-4" />
               <span>Track First Application</span>
+            </button>
+            <button
+              onClick={handleLoadSample}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-border bg-white text-xs font-semibold text-text-dark hover:bg-surface hover:border-primary/40 transition shadow-2xs min-h-[44px]"
+            >
+              <Sparkles className="h-4 w-4 text-secondary" />
+              <span>Load Sample Data (Demo Mode)</span>
             </button>
           </div>
         </div>

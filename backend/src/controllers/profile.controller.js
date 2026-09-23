@@ -11,12 +11,20 @@ export const getProfile = async (req, res) => {
     let profile = await Profile.findOne({ userId });
 
     if (!profile) {
-      // Check if resume has a username
+      // Check if resume has a username or name
       const resume = await Resume.findOne({ userId }).sort({ updatedAt: -1 });
       profile = await Profile.create({
         userId,
-        github_username: resume?.github_username || 'sanjayjakhar',
-        readiness_score: resume?.ats_score || 82,
+        github_username: resume?.github_username ? resume.github_username.replace(/^@/, '').trim() : '',
+        candidate_name: resume?.name || '',
+        readiness_score: resume?.ats_score || 0,
+        competency_scores: {
+          resume: resume?.ats_score || 0,
+          code: 0,
+          interview: 0,
+          roadmap: 0,
+          velocity: 0,
+        },
       });
     }
 

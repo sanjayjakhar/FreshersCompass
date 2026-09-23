@@ -92,16 +92,10 @@ export const uploadResume = async (req, res) => {
 export const getLatestResume = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
-    let resume = await Resume.findOne({ userId }).sort({ updatedAt: -1 });
-
-    // Graceful fallback to default demo resume if new guest sandbox has not uploaded one yet
-    if (!resume) {
-      resume = await Resume.findOne({ userId: 'default_user' }).sort({ updatedAt: -1 });
-    }
-
+    // Clean Zero-Slate: If user has not uploaded a resume yet, return null
     return res.status(200).json({
-      message: 'Resume fetched from MongoDB',
-      data: resume,
+      message: resume ? 'Resume fetched from MongoDB' : 'No resume uploaded yet',
+      data: resume || null,
     });
   } catch (error) {
     console.error('Error fetching resume from MongoDB:', error.message);

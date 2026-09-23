@@ -114,18 +114,18 @@ export default function LinkedInOptimizer() {
   const [generatingPost, setGeneratingPost] = useState(false);
 
   // Cold Outreach state
-  const [candidateName, setCandidateName] = useState('Sanjay Jakhar');
+  const [candidateName, setCandidateName] = useState('');
   const [outreachRole, setOutreachRole] = useState('Software Development Engineer');
-  const [outreachCollege, setOutreachCollege] = useState('Birla Institute of Technology (BIT) Mesra');
-  const [outreachSkills, setOutreachSkills] = useState('React, Node.js, Python, FastAPI, MongoDB, Vector RAG');
+  const [outreachCollege, setOutreachCollege] = useState('');
+  const [outreachSkills, setOutreachSkills] = useState('');
   const [outreachResult, setOutreachResult] = useState(null);
   const [generatingOutreach, setGeneratingOutreach] = useState(false);
 
   const sampleProfiles = [
     {
       role: 'Full-Stack Software Engineer',
-      headline: 'Student at BIT Mesra | Full-Stack Developer | React & Node.js',
-      about: 'Computer science student building full-stack web applications and developer tools. Experienced with MERN stack, Python, and microservices architecture. Seeking SDE roles for 2026.'
+      headline: 'Full-Stack Developer | React & Node.js | Microservices',
+      about: 'Computer science student building full-stack web applications and developer tools. Experienced with MERN stack, Python, and microservices architecture. Seeking SDE roles.'
     },
     {
       role: 'AI & Data Systems Engineer',
@@ -169,13 +169,17 @@ export default function LinkedInOptimizer() {
     try {
       setFetchingProfile(true);
       setError(null);
-      const targetUser = (connectedGithubUser || 'sanjayjakhar').trim().replace(/^@/, '');
+      const targetUser = (connectedGithubUser || '').trim().replace(/^@/, '');
+      if (!targetUser) {
+        setError('Please connect your GitHub username in the top bar first, or enter your GitHub handle.');
+        return;
+      }
       const res = await api.get(`/github/user/${encodeURIComponent(targetUser)}/repos`);
       const profile = res.data?.data?.profile;
       const repos = res.data?.data?.repos || [];
 
       if (profile || repos.length > 0) {
-        const name = profile?.name || targetUser || 'Sanjay Jakhar';
+        const name = profile?.name || targetUser || 'Candidate';
         setCandidateName(name);
         const topProjects = repos.slice(0, 3).map((r) => r.name).join(', ');
         setHeadline(`Full-Stack Software Engineer | Builder of ${topProjects || 'Production Web Apps'} | Open to Opportunities`);

@@ -291,12 +291,16 @@ export default function CodebaseIntelligence() {
   };
 
   const handleGenerateProfileReadme = async () => {
-    const uname = syncedProfile?.login || syncUser.trim() || 'sanjayjakhar';
+    const uname = syncedProfile?.login || syncUser.trim();
+    if (!uname) {
+      setError("Please connect your GitHub username or sync a profile first.");
+      return;
+    }
     setGeneratingProfileReadme(true);
     try {
       const res = await api.post('/github/profile-readme', {
         username: uname,
-        repos: syncedRepos.length > 0 ? syncedRepos : [{ name: 'FreshersCompass', description: 'AI Career Twin', language: 'JavaScript', stars: 12 }],
+        repos: syncedRepos.length > 0 ? syncedRepos : [],
         top_skills: ['React', 'Node.js', 'FastAPI', 'Python', 'Tailwind CSS', 'Vector RAG'],
         bio: syncedProfile?.bio || 'Full-Stack Developer building intelligent tools'
       });
@@ -498,7 +502,7 @@ export default function CodebaseIntelligence() {
                 value={repoInput}
                 onChange={(e) => setRepoInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                placeholder="Enter GitHub URL or owner/repo (e.g. sanjayjakhar/FreshersCompass)"
+                placeholder="Enter GitHub URL or owner/repo (e.g. tiangolo/fastapi or facebook/react)"
                 className="w-full pl-12 pr-4 py-3 bg-white rounded-card border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-dark text-sm font-mono placeholder:font-sans transition-all"
               />
             </div>
@@ -570,8 +574,8 @@ export default function CodebaseIntelligence() {
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-text-dark flex items-center gap-2">
-                    Active Codebase: <span className="text-primary font-mono font-semibold">sanjayjakhar/FreshersCompass</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary-subtle text-secondary font-bold">Fast Local Index</span>
+                    Sample Codebase: <span className="text-primary font-mono font-semibold">tiangolo/fastapi</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary-subtle text-secondary font-bold">Try Sample</span>
                   </h4>
                   <p className="text-xs text-text-body mt-0.5">
                     Explore RAG vector chat, code health audit, recruiter resume pitch bullets, and automated README generators.
@@ -580,13 +584,13 @@ export default function CodebaseIntelligence() {
               </div>
               <button
                 onClick={() => {
-                  setRepoInput('sanjayjakhar/FreshersCompass');
-                  handleAnalyze('sanjayjakhar/FreshersCompass');
+                  setRepoInput('tiangolo/fastapi');
+                  handleAnalyze('tiangolo/fastapi');
                 }}
                 className="btn-primary px-4 py-2.5 rounded-card text-xs font-semibold flex items-center gap-2 shrink-0 cursor-pointer"
               >
                 <Rocket className="h-4 w-4" />
-                <span>1-Click Analyze</span>
+                <span>Try Sample Repo</span>
               </button>
             </div>
           )}
