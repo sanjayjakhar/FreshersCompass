@@ -295,9 +295,7 @@ export default function LinkedInOptimizer() {
   };
 
   return (
-    <div className="pt-24 pb-20 min-h-screen bg-slate-50/70">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
+    <div className="space-y-8 animate-fade-up">
         {/* Header Hero */}
         <div className="text-center max-w-3xl mx-auto mb-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200/60 mb-3 shadow-xs">
@@ -961,8 +959,6 @@ export default function LinkedInOptimizer() {
 
           </div>
         )}
-
-      </div>
     </div>
   );
 }

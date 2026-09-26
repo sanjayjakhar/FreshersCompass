@@ -21,7 +21,7 @@ CODE_EXTENSIONS = {
     ".c", ".cs", ".php", ".rb", ".html", ".css", ".sql", ".sh", ".json", ".yaml", ".yml", ".md"
 }
 
-def parse_repo_identifier(repo_input: str) -> Tuple[str, str]:
+def parse_repo_identifier(repo_input: str, default_owner: Optional[str] = None) -> Tuple[str, str]:
     """Extracts (owner, repo_name) from URL or 'owner/repo' string."""
     cleaned = repo_input.strip()
     cleaned = re.sub(r"^https?://github\.com/", "", cleaned)
@@ -29,9 +29,14 @@ def parse_repo_identifier(repo_input: str) -> Tuple[str, str]:
     if cleaned.endswith(".git"):
         cleaned = cleaned[:-4]
     
-    parts = cleaned.split("/")
+    parts = [p for p in cleaned.split("/") if p]
     if len(parts) == 1:
-        return "sanjayjakhar", parts[0]
+        if default_owner and default_owner.strip():
+            return default_owner.strip(), parts[0]
+        raise ValueError(
+            f"Ambiguous repository identifier '{parts[0]}'. Please provide the full 'owner/repository' format "
+            f"or GitHub URL (e.g., 'facebook/{parts[0]}' or 'https://github.com/facebook/{parts[0]}')."
+        )
     if len(parts) != 2 or not parts[0] or not parts[1]:
         raise ValueError("Invalid repository identifier. Expected 'owner/repo' or GitHub URL.")
     return parts[0], parts[1]

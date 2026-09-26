@@ -103,7 +103,8 @@ export const getPublicProfile = async (req, res) => {
     }
 
     const cleanUsername = rawUsername.replace(/^@/, '').trim();
-    const usernameRegex = new RegExp(`^${cleanUsername}$`, 'i');
+    const escapedUsername = cleanUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const usernameRegex = new RegExp(`^${escapedUsername}$`, 'i');
 
     // 1. Locate Profile by github_username or userId
     let profile = await Profile.findOne({

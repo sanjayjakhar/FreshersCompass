@@ -150,22 +150,33 @@ export const createApplication = async (req, res) => {
 export const updateApplication = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const userId = getEffectiveUserId(req);
 
-    let updated = null;
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      updated = await Application.findByIdAndUpdate(id, updateData, { new: true });
-    }
-    if (!updated) {
-      updated = await Application.findOneAndUpdate(
-        { $or: [{ _id: id }, { customId: id }, { id }] },
-        updateData,
-        { new: true }
-      );
+    // Whitelist modifiable fields to prevent userId tampering or prototype pollution
+    const allowedFields = ['company', 'role', 'location', 'status', 'matchScore', 'appliedDate', 'notes'];
+    const sanitizedUpdate = {};
+    for (const key of allowedFields) {
+      if (req.body[key] !== undefined) {
+        sanitizedUpdate[key] = req.body[key];
+      }
     }
 
+    if (Object.keys(sanitizedUpdate).length === 0) {
+      return res.status(400).json({ message: 'No valid update fields provided' });
+    }
+
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id, userId }
+      : { $or: [{ customId: id }, { id }], userId };
+
+    const updated = await Application.findOneAndUpdate(
+      query,
+      { $set: sanitizedUpdate },
+      { new: true }
+    );
+
     if (!updated) {
-      return res.status(404).json({ message: 'Application not found' });
+      return res.status(404).json({ message: 'Application not found or unauthorized' });
     }
 
     return res.status(200).json({
@@ -187,10 +198,16 @@ export const updateApplication = async (req, res) => {
 export const deleteApplication = async (req, res) => {
   try {
     const { id } = req.params;
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      await Application.findByIdAndDelete(id);
-    } else {
-      await Application.findOneAndDelete({ $or: [{ _id: id }, { customId: id }, { id }] });
+    const userId = getEffectiveUserId(req);
+
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id, userId }
+      : { $or: [{ customId: id }, { id }], userId };
+
+    const deleted = await Application.findOneAndDelete(query);
+
+    if (!deleted) {
+      return res.status(404).json({ message: 'Application not found or unauthorized' });
     }
 
     return res.status(200).json({ message: 'Application deleted from MongoDB' });
@@ -198,3 +215,4 @@ export const deleteApplication = async (req, res) => {
     return res.status(500).json({ message: 'Failed to delete application', details: error.message });
   }
 };
+
