@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
-  Mic, Bot, ArrowRight, CheckCircle2, AlertTriangle, RotateCcw,
+  Mic, MicOff, Volume2, VolumeX, Bot, ArrowRight, CheckCircle2, AlertTriangle, RotateCcw,
   Sparkles, Award, Clock, HelpCircle, ChevronRight, Zap, Target
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -15,6 +15,106 @@ export default function AIInterview() {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState(null);
   const [evalError, setEvalError] = useState(null);
+
+  // Speech-to-Text & Text-to-Speech state
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechError, setSpeechError] = useState(null);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechError('Speech recognition is not supported in this browser. Please use Google Chrome, Edge, or Safari.');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setSpeechError(null);
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript.trim()) {
+          setUserAnswer((prev) => {
+            const trimmed = prev.trim();
+            return trimmed ? `${trimmed} ${transcript.trim()}` : transcript.trim();
+          });
+        }
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          setSpeechError('Microphone permission was denied. Please allow microphone access in your browser.');
+        } else if (event.error !== 'no-speech') {
+          setSpeechError(`Speech recognition notice: ${event.error}`);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Speech recognition error:', err);
+      setSpeechError('Could not start microphone dictation.');
+      setIsListening(false);
+    }
+  };
+
+  const toggleSpeaking = (text) => {
+    if (!('speechSynthesis' in window)) {
+      alert('Text-to-speech is not supported in this browser.');
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
 
   const questions = [
     {
@@ -44,6 +144,15 @@ export default function AIInterview() {
   ];
 
   const handleStartSession = () => {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsListening(false);
+    setIsSpeaking(false);
+    setSpeechError(null);
     setSessionStarted(true);
     setCurrentQuestionIndex(0);
     setUserAnswer('');
@@ -55,6 +164,15 @@ export default function AIInterview() {
 
   const handleSubmitAnswer = async () => {
     if (!userAnswer.trim()) return;
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsListening(false);
+    setIsSpeaking(false);
 
     const nextAnswers = [...answers, { question: questions[currentQuestionIndex], answer: userAnswer }];
     setAnswers(nextAnswers);
@@ -343,9 +461,27 @@ export default function AIInterview() {
 
           {/* The Current Question Card */}
           <div className="bg-white rounded-xl p-6 border border-border space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
-              <span>{questions[currentQuestionIndex].category}</span>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
+                <span>{questions[currentQuestionIndex].category}</span>
+              </div>
+
+              {/* Text-to-Speech (TTS) Voice Prompt */}
+              <button
+                type="button"
+                onClick={() => toggleSpeaking(questions[currentQuestionIndex].question)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                  isSpeaking
+                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-700 animate-pulse'
+                    : 'bg-white border-border text-text-muted hover:text-text-dark hover:border-primary/40'
+                }`}
+                title={isSpeaking ? 'Stop speaking' : 'Read question aloud'}
+              >
+                {isSpeaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                <span>{isSpeaking ? 'Stop Audio' : 'Listen to Question'}</span>
+              </button>
             </div>
+
             <h3 className="text-base sm:text-lg font-bold text-text-dark leading-snug">
               {questions[currentQuestionIndex].question}
             </h3>
@@ -354,16 +490,51 @@ export default function AIInterview() {
             </p>
           </div>
 
-          {/* User Answer Field */}
+          {/* Speech Error Banner if applicable */}
+          {speechError && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between gap-2 text-xs text-amber-800">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                <span>{speechError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSpeechError(null)}
+                className="text-xs font-bold text-amber-700 hover:text-amber-900"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* User Answer Field with STT Microphone Toggle */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-text-dark block">
-              Your Answer / Explanation:
-            </label>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="text-xs font-bold text-text-dark block">
+                Your Answer / Explanation:
+              </label>
+
+              {/* Speech-to-Text (STT) Button */}
+              <button
+                type="button"
+                onClick={toggleListening}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                  isListening
+                    ? 'bg-red-500/10 border-red-500/40 text-red-600 shadow-xs animate-pulse'
+                    : 'bg-white border-border text-text-muted hover:text-text-dark hover:border-primary/40'
+                }`}
+                title={isListening ? 'Stop listening' : 'Start voice dictation'}
+              >
+                {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                <span>{isListening ? 'Listening (Click to Stop)...' : 'Answer with Voice (Speech-to-Text)'}</span>
+              </button>
+            </div>
+
             <textarea
               rows={6}
               value={userAnswer}
               onChange={(e) => setUserAnswer(e.target.value)}
-              placeholder="Type your spoken answer or technical breakdown here..."
+              placeholder="Speak using the voice button above, or type your technical breakdown here..."
               className="w-full p-4 bg-white rounded-xl border border-border text-xs text-text-dark focus:outline-none focus:border-primary leading-relaxed font-sans"
               autoFocus
             />

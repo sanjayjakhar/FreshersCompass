@@ -1,5 +1,6 @@
 import express from 'express';
 import { upload, validateResumeMagicBytes } from '../middleware/upload.middleware.js';
+import { resumeUploadLimiter } from '../middleware/rateLimiter.js';
 import {
   uploadResume,
   getLatestResume,
@@ -9,8 +10,8 @@ import {
 
 const router = express.Router();
 
-// Upload resume and persist to MongoDB (validated with strict magic bytes)
-router.post('/upload', upload.single('resume'), validateResumeMagicBytes, uploadResume);
+// Upload resume and persist to MongoDB (validated with strict magic bytes and rate limit)
+router.post('/upload', resumeUploadLimiter, upload.single('resume'), validateResumeMagicBytes, uploadResume);
 
 
 // Fetch latest resume from MongoDB
