@@ -43,32 +43,6 @@ export default function PublicPortfolio() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-bg-light flex flex-col items-center justify-center p-6">
-        <div className="max-w-2xl w-full bg-white rounded-2xl border border-border p-8 shadow-sm space-y-6 animate-pulse">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-surface"></div>
-            <div className="space-y-2 flex-1">
-              <div className="h-6 bg-surface rounded w-1/3"></div>
-              <div className="h-4 bg-surface rounded w-1/2"></div>
-            </div>
-          </div>
-          <div className="space-y-3 pt-4">
-            <div className="h-4 bg-surface rounded w-full"></div>
-            <div className="h-4 bg-surface rounded w-5/6"></div>
-            <div className="h-4 bg-surface rounded w-4/6"></div>
-          </div>
-          <div className="grid grid-cols-3 gap-4 pt-4">
-            <div className="h-20 bg-surface rounded-xl"></div>
-            <div className="h-20 bg-surface rounded-xl"></div>
-            <div className="h-20 bg-surface rounded-xl"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const name = profile?.candidate_name || username || 'Developer Candidate';
   const headline = profile?.headline || 'Fullstack Engineer & Systems Builder';
   const bio = profile?.bio || profile?.about || 'Software engineer specializing in modern web applications, scalable APIs, and distributed systems.';
@@ -95,6 +69,103 @@ export default function PublicPortfolio() {
     .slice(0, 2)
     .map((w) => w[0].toUpperCase())
     .join('');
+
+  // SEO & Social Graph: Inject dynamic Schema.org JSON-LD & OpenGraph meta tags (#42)
+  useEffect(() => {
+    if (loading && !profile) return;
+
+    const pageTitle = `${name} | ${headline} - FreshersCompass Portfolio`;
+    document.title = pageTitle;
+
+    // Structured JSON-LD Person & ProfilePage schema
+    const jsonLdData = {
+      "@context": "https://schema.org",
+      "@type": "ProfilePage",
+      "mainEntity": {
+        "@type": "Person",
+        "name": name,
+        "jobTitle": headline,
+        "description": bio,
+        "knowsAbout": skills,
+        "url": typeof window !== 'undefined' ? window.location.href : '',
+        "sameAs": [
+          githubUser ? `https://github.com/${githubUser}` : null,
+          profile?.linkedin_url || null,
+        ].filter(Boolean),
+        "hasCredential": {
+          "@type": "EducationalOccupationalCredential",
+          "name": `Verified Readiness Index: ${readiness}%`,
+          "credentialCategory": "ATS & Technical Competency Benchmark"
+        }
+      }
+    };
+
+    let scriptTag = document.getElementById('fc-portfolio-jsonld');
+    if (!scriptTag) {
+      scriptTag = document.createElement('script');
+      scriptTag.id = 'fc-portfolio-jsonld';
+      scriptTag.type = 'application/ld+json';
+      document.head.appendChild(scriptTag);
+    }
+    scriptTag.textContent = JSON.stringify(jsonLdData, null, 2);
+
+    // Dynamic OpenGraph and Twitter card tags
+    const metaTags = [
+      { property: 'og:title', content: `${name} — ${headline}` },
+      { property: 'og:description', content: bio },
+      { property: 'og:type', content: 'profile' },
+      { property: 'og:url', content: typeof window !== 'undefined' ? window.location.href : '' },
+      { name: 'twitter:card', content: 'summary_large_image' },
+      { name: 'twitter:title', content: `${name} — ${headline}` },
+      { name: 'twitter:description', content: bio },
+    ];
+
+    const injectedMeta = [];
+    metaTags.forEach(({ property, name: metaName, content }) => {
+      const selector = property ? `meta[property="${property}"]` : `meta[name="${metaName}"]`;
+      let el = document.querySelector(selector);
+      if (!el) {
+        el = document.createElement('meta');
+        if (property) el.setAttribute('property', property);
+        if (metaName) el.setAttribute('name', metaName);
+        document.head.appendChild(el);
+        injectedMeta.push(el);
+      }
+      el.setAttribute('content', content);
+    });
+
+    return () => {
+      const existingScript = document.getElementById('fc-portfolio-jsonld');
+      if (existingScript) existingScript.remove();
+      injectedMeta.forEach((el) => el.remove());
+    };
+  }, [profile, loading, name, headline, bio, githubUser, skills, readiness]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-bg-light flex flex-col items-center justify-center p-6">
+        <div className="max-w-2xl w-full bg-white rounded-2xl border border-border p-8 shadow-sm space-y-6 animate-pulse">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-surface"></div>
+            <div className="space-y-2 flex-1">
+              <div className="h-6 bg-surface rounded w-1/3"></div>
+              <div className="h-4 bg-surface rounded w-1/2"></div>
+            </div>
+          </div>
+          <div className="space-y-3 pt-4">
+            <div className="h-4 bg-surface rounded w-full"></div>
+            <div className="h-4 bg-surface rounded w-5/6"></div>
+            <div className="h-4 bg-surface rounded w-4/6"></div>
+          </div>
+          <div className="grid grid-cols-3 gap-4 pt-4">
+            <div className="h-20 bg-surface rounded-xl"></div>
+            <div className="h-20 bg-surface rounded-xl"></div>
+            <div className="h-20 bg-surface rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-bg-light text-text-dark flex flex-col font-sans selection:bg-primary/10 selection:text-primary">

@@ -1,4 +1,5 @@
 import express from "express";
+import helmet from "helmet";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -15,7 +16,31 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ---------- Middleware ----------
-// 1. CORS mounted at top so browser OPTIONS preflights succeed before parsing/session middleware
+// 1. Helmet HTTP security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options)
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+        imgSrc: ["'self'", "data:", "https:", "http:"],
+        connectSrc: ["'self'", "http://localhost:*", "http://127.0.0.1:*", "https:"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+  })
+);
+
+// 2. CORS mounted early so browser OPTIONS preflights succeed before parsing/session middleware
 const allowedOrigins = [
   process.env.CLIENT_URL,
   "http://localhost:5173",
