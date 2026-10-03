@@ -11,10 +11,10 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
         try:
             init_gemini()
             gemini_models = [
-                os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
-                "gemini-1.5-flash",
-                "gemini-2.0-flash",
-                "gemini-flash-latest"
+                os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+                "gemini-2.5-flash",
+                "gemini-3.8-flash",
+                "gemini-2.5-flash-lite",
             ]
             seen_gemini = set()
             for model_name in gemini_models:
@@ -29,7 +29,7 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
                             response_mime_type="application/json",
                             temperature=temperature
                         ),
-                        request_options={"timeout": 8}
+                        request_options={"timeout": 12}
                     )
                     if resp and resp.text and resp.text.strip():
                         return json.loads(resp.text.strip())
@@ -43,11 +43,12 @@ def execute_llm_json(prompt: str, temperature: float = 0.3) -> Dict[str, Any]:
     if groq_key:
         try:
             from groq import Groq
-            client = Groq(api_key=groq_key, timeout=8.0)
+            client = Groq(api_key=groq_key, timeout=10.0)
             groq_models = [
-                os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-                "llama-3.3-70b-versatile",
-                "llama-3.1-8b-instant"
+                os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+                "openai/gpt-oss-120b",
+                "openai/gpt-oss-20b",
+                "qwen/qwen3.8-27b",
             ]
             seen_groq = set()
             for model_name in groq_models:

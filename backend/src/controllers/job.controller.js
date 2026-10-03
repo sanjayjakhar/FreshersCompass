@@ -1,10 +1,4 @@
-import axios from "axios";
 import { fetchLiveJobs } from "../services/job.service.js";
-
-const getAiServiceHeaders = () => ({
-  "Content-Type": "application/json",
-  "x-internal-key": process.env.AI_SERVICE_INTERNAL_KEY || "ai_internal_secret_fc_98u23r09ju023jf",
-});
 
 const filterJobs = (jobs, filters) => {
   const { grad_year, type, location, domain, search } = filters;

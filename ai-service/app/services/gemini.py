@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from typing import Optional
 import google.generativeai as genai
 from pydantic import BaseModel
@@ -57,16 +58,16 @@ def parse_resume_with_gemini(raw_text: str) -> dict:
     parsed_json_str = None
     provider_used = None
 
-    # 1. Primary: Google Gemini (fast models: gemini-1.5-flash / gemini-2.0-flash)
+    # 1. Primary: Google Gemini (fast models: gemini-2.5-flash / gemini-3.8-flash)
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
         try:
             init_gemini()
             gemini_models = [
-                os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
-                "gemini-1.5-flash",
-                "gemini-2.0-flash",
-                "gemini-flash-latest"
+                os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
+                "gemini-3.8-flash",
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
             ]
             seen_gemini = set()
             for model_name in gemini_models:
@@ -81,7 +82,7 @@ def parse_resume_with_gemini(raw_text: str) -> dict:
                             response_mime_type="application/json",
                             temperature=0.2
                         ),
-                        request_options={"timeout": 6}
+                        request_options={"timeout": 12}
                     )
                     if resp and resp.text and resp.text.strip():
                         parsed_json_str = resp.text.strip()
@@ -93,17 +94,18 @@ def parse_resume_with_gemini(raw_text: str) -> dict:
         except Exception as g_err:
             print(f"[Resume Parser] Gemini initialization notice: {g_err}")
 
-    # 2. Secondary Fallback: Groq (Llama 3.3 / Llama 3.1)
+    # 2. Secondary Fallback: Groq
     if not parsed_json_str:
         groq_key = os.getenv("GROQ_API_KEY")
         if groq_key:
             try:
                 from groq import Groq
-                client = Groq(api_key=groq_key, timeout=8.0)
+                client = Groq(api_key=groq_key, timeout=10.0)
                 groq_models = [
-                    os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-                    "llama-3.3-70b-versatile",
-                    "llama-3.1-8b-instant"
+                    os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+                    "openai/gpt-oss-120b",
+                    "openai/gpt-oss-20b",
+                    "qwen/qwen3.8-27b",
                 ]
                 seen_groq = set()
                 for model_name in groq_models:
