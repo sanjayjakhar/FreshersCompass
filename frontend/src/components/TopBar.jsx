@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, Bell, Menu, Github, Sparkles, X, ArrowRight, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchProfileFromDB, updateProfileInDB, fetchLatestResume } from '../services/api';
@@ -10,6 +10,17 @@ export default function TopBar({ setMobileOpen }) {
   const [connectedUser, setConnectedUser] = useState('');
   const [resumeDetectedUser, setResumeDetectedUser] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const connectedUserRef = useRef('');
+  const resumeDetectedUserRef = useRef('');
+
+  useEffect(() => {
+    connectedUserRef.current = connectedUser;
+  }, [connectedUser]);
+
+  useEffect(() => {
+    resumeDetectedUserRef.current = resumeDetectedUser;
+  }, [resumeDetectedUser]);
 
   // Auto-sync across MongoDB and custom events
   useEffect(() => {
@@ -39,7 +50,7 @@ export default function TopBar({ setMobileOpen }) {
     };
 
     const handleOpenModal = () => {
-      setGithubUser(connectedUser || resumeDetectedUser || '');
+      setGithubUser(connectedUserRef.current || resumeDetectedUserRef.current || '');
       setShowGithubModal(true);
     };
 
@@ -49,7 +60,7 @@ export default function TopBar({ setMobileOpen }) {
       window.removeEventListener('freshercompass_profile_updated', handleSync);
       window.removeEventListener('freshercompass_open_github_modal', handleOpenModal);
     };
-  }, [connectedUser, resumeDetectedUser]);
+  }, []);
 
   const handleSyncGithub = async (e) => {
     if (e) e.preventDefault();

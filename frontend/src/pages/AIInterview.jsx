@@ -60,14 +60,16 @@ export default function AIInterview() {
       };
 
       recognition.onresult = (event) => {
-        let transcript = '';
+        let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
         }
-        if (transcript.trim()) {
+        if (finalTranscript.trim()) {
           setUserAnswer((prev) => {
             const trimmed = prev.trim();
-            return trimmed ? `${trimmed} ${transcript.trim()}` : transcript.trim();
+            return trimmed ? `${trimmed} ${finalTranscript.trim()}` : finalTranscript.trim();
           });
         }
       };

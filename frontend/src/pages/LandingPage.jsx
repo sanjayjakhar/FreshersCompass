@@ -26,9 +26,9 @@ export default function LandingPage() {
             <Link to="/dashboard" className="flex items-center gap-2 bg-primary text-surface px-6 py-3 rounded-xl font-bold hover:bg-primary-dark transition-colors shadow-xl shadow-primary/20">
               Get Started Free <ArrowRight className="h-5 w-5" />
             </Link>
-            <button className="bg-surface text-text-primary border border-border px-6 py-3 rounded-xl font-semibold hover:bg-surface-muted transition-colors">
+            <Link to="/career-twin" className="bg-surface text-text-primary border border-border px-6 py-3 rounded-xl font-semibold hover:bg-surface-muted transition-colors flex items-center justify-center">
               View Demo
-            </button>
+            </Link>
           </div>
         </div>
 

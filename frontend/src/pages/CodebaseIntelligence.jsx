@@ -933,7 +933,7 @@ export default function CodebaseIntelligence() {
                       <FileCode className="h-3.5 w-3.5 text-primary" /> Key Code Files
                     </h3>
                     <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
-                      {analysisData.files_sample.slice(0, 8).map((f, idx) => (
+                      {(analysisData.files_sample || []).slice(0, 8).map((f, idx) => (
                         <div
                           key={idx}
                           onClick={() => handleSendMessage(`Explain the purpose and key functions of file ${f}`)}
@@ -1169,7 +1169,7 @@ export default function CodebaseIntelligence() {
                       <Code2 className="h-4 w-4 text-primary" /> Detected Tech Stack
                     </h3>
                     <div className="flex flex-wrap gap-2">
-                      {analysisData.health.tech_stack.map((t, idx) => (
+                      {(analysisData.health?.tech_stack || []).map((t, idx) => (
                         <span
                           key={idx}
                           className="px-3 py-1 rounded-card bg-white text-primary border border-border text-xs font-semibold shadow-2xs"
@@ -1186,7 +1186,7 @@ export default function CodebaseIntelligence() {
                       <CheckCircle2 className="h-4 w-4 text-success" /> Key Strengths
                     </h3>
                     <ul className="space-y-2">
-                      {analysisData.health.strengths.map((str, idx) => (
+                      {(analysisData.health?.strengths || []).map((str, idx) => (
                         <li key={idx} className="flex items-start gap-2 text-xs text-text-body">
                           <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />
                           <span>{str}</span>
@@ -1201,7 +1201,7 @@ export default function CodebaseIntelligence() {
                       <AlertCircle className="h-4 w-4 text-warning" /> Actionable Improvements
                     </h3>
                     <ul className="space-y-2">
-                      {analysisData.health.improvements.map((imp, idx) => (
+                      {(analysisData.health?.improvements || []).map((imp, idx) => (
                         <li key={idx} className="flex items-start gap-2 text-xs text-text-body">
                           <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                           <span>{imp}</span>
@@ -1228,7 +1228,7 @@ export default function CodebaseIntelligence() {
                 </div>
 
                 <div className="space-y-3.5">
-                  {analysisData.recruiter_pitch.map((bullet, idx) => (
+                  {(analysisData.recruiter_pitch || []).map((bullet, idx) => (
                     <div
                       key={idx}
                       className="p-4 rounded-card bg-white border border-border flex items-start justify-between gap-4 group hover:border-primary/40 transition-all shadow-2xs"
