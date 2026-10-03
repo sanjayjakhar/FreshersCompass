@@ -419,6 +419,7 @@ export default function ApplicationTracker() {
                   <option value="applied">Applied</option>
                   <option value="interviewing">Interviewing</option>
                   <option value="offer">Offer Received</option>
+                  <option value="rejected">Archived / Rejected</option>
                 </select>
               </div>
 
@@ -430,8 +431,19 @@ export default function ApplicationTracker() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary text-xs">
-                  Save Application
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="btn-primary text-xs flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Application</span>
+                  )}
                 </button>
               </div>
             </form>

@@ -433,10 +433,10 @@ export default function JobRecommendations() {
 
                     <div className="flex items-center gap-2 shrink-0">
                       <Link
-                        to="/dashboard"
+                        to="/resume"
                         className="px-3 py-1.5 rounded-xl bg-white text-blue-700 font-semibold border border-blue-200 hover:bg-blue-100/50 transition-all text-xs"
                       >
-                        Re-upload in Dashboard
+                        Re-upload Resume
                       </Link>
                       <button
                         onClick={() => applyTrackSource('backend')}
@@ -453,13 +453,13 @@ export default function JobRecommendations() {
                       <div>
                         <span className="font-bold text-amber-900">No Resume uploaded yet.</span>
                         <p className="text-amber-700 text-[11px] mt-0.5">
-                          Upload your resume in the Dashboard to get personalized ATS scoring and automatic role matching.
+                          Upload your resume in Resume & ATS Intelligence to get personalized ATS scoring and automatic role matching.
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Link
-                        to="/dashboard"
+                        to="/resume"
                         className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-all shadow-xs shrink-0"
                       >
                         Upload Resume Now →

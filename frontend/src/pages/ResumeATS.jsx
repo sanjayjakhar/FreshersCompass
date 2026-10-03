@@ -88,8 +88,14 @@ export default function ResumeATS() {
     setFile(null);
     setParsedData(null);
     setError('');
+    setSuccessMsg('');
     try {
       await deleteResumeFromDB();
+      window.dispatchEvent(
+        new CustomEvent('freshercompass_profile_updated', {
+          detail: '',
+        })
+      );
     } catch (e) {
       console.error('Failed to clear resume from MongoDB', e);
     }

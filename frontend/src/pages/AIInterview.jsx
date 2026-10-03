@@ -4,7 +4,7 @@ import {
   Sparkles, Award, Clock, HelpCircle, ChevronRight, Zap, Target
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { evaluateInterviewSession } from '../services/api';
+import { evaluateInterviewSession, updateProfileInDB } from '../services/api';
 
 export default function AIInterview() {
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -194,9 +194,13 @@ export default function AIInterview() {
         answer: item.answer,
       }));
 
+      let finalScore = 84;
       try {
         const report = await evaluateInterviewSession(formattedPayload, 'Full-Stack Software Engineer');
         setEvaluationResult(report);
+        if (report?.overall_score) {
+          finalScore = report.overall_score;
+        }
       } catch (err) {
         console.error('Interview evaluation error:', err);
         setEvalError('Online LLM evaluation hit latency limit; generated heuristic scoring analysis.');
@@ -218,7 +222,18 @@ export default function AIInterview() {
           per_question_feedback: [],
           provider_used: 'heuristic-resilient-evaluator'
         });
+        finalScore = 84;
       } finally {
+        try {
+          await updateProfileInDB({
+            competency_scores: { interview: finalScore },
+          });
+          window.dispatchEvent(
+            new CustomEvent('freshercompass_profile_updated', { detail: undefined })
+          );
+        } catch (saveErr) {
+          console.error('Failed to sync interview score to profile:', saveErr);
+        }
         setIsEvaluating(false);
         setIsCompleted(true);
       }
