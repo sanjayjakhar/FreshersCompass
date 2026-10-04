@@ -1,6 +1,18 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.model.js';
 
+/**
+ * Shared cookie attributes for every session cookie we issue.
+ * `res.clearCookie` only removes a cookie when the attributes match the ones
+ * used when it was set, so both the set and clear paths must use this object.
+ */
+const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+  path: '/',
+};
+
 export const githubAuthCallback = async (req, res) => {
   try {
     // req.user will be populated by passport in a real scenario
@@ -22,8 +34,7 @@ export const githubAuthCallback = async (req, res) => {
     });
 
     res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      ...SESSION_COOKIE_OPTIONS,
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
@@ -35,7 +46,13 @@ export const githubAuthCallback = async (req, res) => {
 };
 
 export const logout = (req, res) => {
-  res.clearCookie('token');
+  // Terminate the full session boundary: the JWT auth cookie AND the
+  // fc_session_id isolation cookie. Leaving fc_session_id behind on shared
+  // machines links the next visitor's guest telemetry, cached resumes and
+  // applications to the previous visitor's session.
+  res.clearCookie('token', SESSION_COOKIE_OPTIONS);
+  res.clearCookie('fc_session_id', SESSION_COOKIE_OPTIONS);
+  res.removeHeader('x-session-id');
   res.status(200).json({ message: 'Logged out successfully' });
 };
 
