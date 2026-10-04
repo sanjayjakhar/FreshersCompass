@@ -3,9 +3,12 @@ import { Link } from 'react-router-dom';
 import {
   Sparkles, FileText, Code2, Mic, Compass, CheckSquare,
   ArrowRight, ShieldCheck, TrendingUp, AlertCircle, RefreshCw,
-  Zap, Award, CheckCircle2
+  Zap, Award, CheckCircle2, Radar
 } from 'lucide-react';
 import { fetchLatestResume, fetchProfileFromDB } from '../services/api';
+import ReadinessRadar from '../components/ReadinessRadar';
+import ReadinessTrendline from '../components/ReadinessTrendline';
+import useReadinessRadar from '../hooks/useReadinessRadar';
 
 export default function CareerTwin() {
   const [resumeData, setResumeData] = useState(null);
@@ -52,6 +55,18 @@ export default function CareerTwin() {
   const interviewScore = profileData?.competency_scores?.interview || 0;
   const skillRoadmapScore = profileData?.competency_scores?.roadmap || (resumeData ? 60 : 0);
   const pipelineVelocity = profileData?.competency_scores?.velocity || (resumeData ? 75 : 0);
+
+  // Multi-axis readiness model, shared verbatim with the Dashboard radar (#58)
+  const {
+    axes: readinessAxes,
+    overallReadiness: radarReadiness,
+    history: readinessHistory,
+    benchmark: readinessBenchmark,
+    targetRole,
+    telemetryError,
+    goToAxis,
+    routes: readinessRoutes,
+  } = useReadinessRadar();
 
   const hasAnyActivity = Boolean(resumeData || githubUser || interviewScore > 0);
   const overallReadiness = hasAnyActivity
@@ -160,6 +175,50 @@ export default function CareerTwin() {
             />
           </div>
           <p className="text-[11px] text-text-muted mt-2">Architecture explanation score</p>
+        </div>
+      </div>
+
+      {/* 2b. Multi-axis Readiness Radar + Market Benchmark + History (#58) */}
+      <div className="bg-surface rounded-card border border-border p-6 shadow-2xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold mb-1">
+              <Radar className="h-3 w-3" />
+              <span>Readiness Radar</span>
+            </div>
+            <h2 className="text-base font-bold text-text-dark">Dimensional Readiness vs Market Benchmark</h2>
+            <p className="text-xs text-text-body mt-0.5">
+              Radar axes expose strengths and blindspots that a single index hides. The dashed
+              polygon is the reference average for your target role.
+            </p>
+          </div>
+          {targetRole && (
+            <span className="text-[11px] font-bold text-text-muted shrink-0">
+              Target: <span className="text-text-dark">{targetRole}</span>
+            </span>
+          )}
+        </div>
+
+        <ReadinessRadar
+          axes={readinessAxes}
+          benchmark={readinessBenchmark}
+          onAxisClick={goToAxis}
+          routes={readinessRoutes}
+        />
+
+        <div className="pt-4 border-t border-border">
+          <ReadinessTrendline history={readinessHistory} />
+          {telemetryError && (
+            <p className="text-[10px] text-warning mt-2 leading-relaxed">{telemetryError}</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] font-semibold text-text-body">
+          <span className="inline-flex items-center gap-1.5">
+            <TrendingUp className="h-3 w-3 text-secondary" />
+            Radar readiness index
+          </span>
+          <span className="font-mono font-bold text-text-dark">{radarReadiness}</span>
         </div>
       </div>
 
