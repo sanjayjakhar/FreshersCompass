@@ -17,9 +17,24 @@ export const evaluateInterview = async (req, res) => {
 
     const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
 
+    /**
+     * Forward per-answer timing so the evaluator can score pacing and
+     * conciseness. Older clients omit these fields, so they stay optional.
+     */
+    const enrichedResponses = responses.map((item) => ({
+      ...item,
+      ...(Number.isFinite(Number(item?.time_spent_seconds))
+        ? { time_spent_seconds: Number(item.time_spent_seconds) }
+        : {}),
+      ...(Number.isFinite(Number(item?.budget_seconds))
+        ? { budget_seconds: Number(item.budget_seconds) }
+        : {}),
+      ...(typeof item?.auto_submitted === 'boolean' ? { auto_submitted: item.auto_submitted } : {}),
+    }));
+
     const response = await axios.post(
       `${aiServiceUrl}/interview/evaluate`,
-      { responses, role: role || 'Full-Stack Software Engineer' },
+      { responses: enrichedResponses, role: role || 'Full-Stack Software Engineer' },
       { headers: getAiServiceHeaders(), timeout: 40000 }
     );
 
