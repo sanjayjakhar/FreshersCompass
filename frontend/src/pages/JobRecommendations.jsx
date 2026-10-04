@@ -6,9 +6,14 @@ import {
   CheckCircle2, AlertCircle, RefreshCw, Search, MapPin, Tag,
   GraduationCap, Building2, IndianRupee, Clock, Check, SlidersHorizontal,
   ArrowUpRight, ChevronDown, FileText, Linkedin, UserCheck, X, Plus,
-  Layers, ArrowLeftRight, Compass, ArrowRight
+  Layers, ArrowLeftRight, Compass, ArrowRight, Loader2
 } from 'lucide-react';
-import api, { fetchLatestResume, fetchProfileFromDB } from '../services/api';
+import api, {
+  fetchLatestResume,
+  fetchProfileFromDB,
+  fetchApplicationsFromDB,
+  createApplicationInDB
+} from '../services/api';
 import useDebounce from '../hooks/useDebounce';
 
 
@@ -216,6 +221,78 @@ export default function JobRecommendations() {
       setError('Failed to load real-time job feed. Please verify backend connection.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ---------- Track in Pipeline bridge (#57) ----------
+  const [trackedKeys, setTrackedKeys] = useState(() => new Set());
+  const [trackingKey, setTrackingKey] = useState(null);
+  const [trackError, setTrackError] = useState(null);
+
+  // Job feed ids are regenerated per fetch, so dedupe on the same fields the
+  // tracker persists: company + role.
+  const jobTrackKey = useCallback(
+    (job) =>
+      `${String(job?.company || '').trim().toLowerCase()}|${String(job?.title || '').trim().toLowerCase()}`,
+    []
+  );
+
+  const syncTrackedFromDB = useCallback(async () => {
+    try {
+      const apps = await fetchApplicationsFromDB();
+      const next = new Set();
+      (apps || []).forEach((app) => {
+        next.add(
+          `${String(app?.company || '').trim().toLowerCase()}|${String(app?.role || '').trim().toLowerCase()}`
+        );
+      });
+      setTrackedKeys(next);
+    } catch (err) {
+      console.error('Failed to load tracked applications:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    syncTrackedFromDB();
+  }, [syncTrackedFromDB]);
+
+  // Stay in step with adds/deletes performed on the Application Tracker page.
+  useEffect(() => {
+    window.addEventListener('freshercompass_applications_updated', syncTrackedFromDB);
+    return () => {
+      window.removeEventListener('freshercompass_applications_updated', syncTrackedFromDB);
+    };
+  }, [syncTrackedFromDB]);
+
+  const handleTrackInPipeline = async (job) => {
+    const key = jobTrackKey(job);
+    const company = String(job?.company || '').trim();
+    const role = String(job?.title || '').trim();
+
+    if (!company || !role) {
+      setTrackError('This listing is missing a company or role, so it cannot be tracked.');
+      return;
+    }
+    if (trackedKeys.has(key) || trackingKey) return;
+
+    setTrackingKey(key);
+    setTrackError(null);
+    try {
+      await createApplicationInDB({
+        company,
+        role,
+        location: String(job.location || '').trim() || 'Remote',
+        matchScore: job.match_score || 75,
+        status: 'applied',
+        appliedDate: new Date().toISOString().split('T')[0],
+      });
+      setTrackedKeys((prev) => new Set(prev).add(key));
+      window.dispatchEvent(new CustomEvent('freshercompass_applications_updated'));
+    } catch (err) {
+      console.error('Failed to track job in pipeline:', err);
+      setTrackError('Could not save to your pipeline. Please try again.');
+    } finally {
+      setTrackingKey(null);
     }
   };
 
@@ -785,6 +862,26 @@ export default function JobRecommendations() {
           </div>
         )}
 
+        {trackError && (
+          <div
+            role="alert"
+            className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs mb-8 flex items-center justify-between gap-2"
+          >
+            <span className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{trackError}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setTrackError(null)}
+              className="shrink-0 p-1 rounded-md hover:bg-amber-100 transition-colors"
+              aria-label="Dismiss tracking error"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Loading State Skeleton */}
         {loading && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-pulse">
@@ -845,6 +942,11 @@ export default function JobRecommendations() {
                 score >= 85 ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 shadow-2xs' :
                 score >= 70 ? 'bg-blue-50 text-blue-700 border-blue-200/80 shadow-2xs' :
                 'bg-slate-50 text-slate-700 border-slate-200';
+
+              // Track in Pipeline state (#57)
+              const trackKey = jobTrackKey(job);
+              const isTracked = trackedKeys.has(trackKey);
+              const isTracking = trackingKey === trackKey;
 
               return (
                 <div
@@ -961,21 +1063,52 @@ export default function JobRecommendations() {
                   </div>
 
                   {/* Apply Footer with Coral CTA */}
-                  <div className="pt-3.5 border-t border-border flex items-center justify-between">
+                  <div className="pt-3.5 border-t border-border flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
                       <Compass className="h-3.5 w-3.5 text-primary" />
                       <span>Direct Careers Portal</span>
                     </div>
-                    {/* Single Coral CTA (#D85A30) */}
-                    <a
-                      href={job.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn-accent text-xs font-bold py-2 px-4 inline-flex items-center gap-1.5"
-                    >
-                      <span>Apply Now</span>
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </a>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleTrackInPipeline(job)}
+                        disabled={isTracked || isTracking}
+                        title={
+                          isTracked
+                            ? 'Already in your application pipeline'
+                            : 'Track in Pipeline'
+                        }
+                        aria-label={
+                          isTracked
+                            ? `${job.title} at ${job.company} is already tracked`
+                            : `Track ${job.title} at ${job.company} in your pipeline`
+                        }
+                        className={`text-xs font-bold py-2 px-3 inline-flex items-center gap-1.5 rounded-lg border transition-all ${
+                          isTracked
+                            ? 'bg-success/10 text-success border-success/30 cursor-default'
+                            : 'bg-white text-primary border-border hover:border-blue-400 hover:shadow-xs'
+                        }`}
+                      >
+                        {isTracking ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : isTracked ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <Plus className="h-3.5 w-3.5" />
+                        )}
+                        <span>{isTracked ? 'Tracked' : 'Track'}</span>
+                      </button>
+                      {/* Single Coral CTA (#D85A30) */}
+                      <a
+                        href={job.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-accent text-xs font-bold py-2 px-4 inline-flex items-center gap-1.5"
+                      >
+                        <span>Apply Now</span>
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
                   </div>
 
                 </div>

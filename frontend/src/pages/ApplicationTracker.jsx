@@ -44,6 +44,11 @@ export default function ApplicationTracker() {
     loadApplications();
   }, []);
 
+  // Let other pages (e.g. the Job Recommendations feed) know the pipeline changed.
+  const broadcastApplicationsUpdated = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('freshercompass_applications_updated'));
+  }, []);
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!newCompany.trim() || !newRole.trim()) return;
@@ -61,6 +66,7 @@ export default function ApplicationTracker() {
 
       if (newApp) {
         setApplications((prev) => [newApp, ...prev]);
+        broadcastApplicationsUpdated();
       } else {
         await loadApplications();
       }
@@ -94,6 +100,7 @@ export default function ApplicationTracker() {
     try {
       setApplications((prev) => prev.filter((app) => app._id !== appId && app.id !== appId));
       await deleteApplicationFromDB(appId);
+      broadcastApplicationsUpdated();
     } catch (err) {
       console.error('Failed to delete application from MongoDB:', err);
       await loadApplications();
@@ -105,6 +112,7 @@ export default function ApplicationTracker() {
       setLoading(true);
       const data = await seedDemoApplicationsToDB();
       setApplications(data);
+      broadcastApplicationsUpdated();
     } catch (err) {
       console.error('Failed to seed demo applications:', err);
     } finally {
@@ -118,6 +126,7 @@ export default function ApplicationTracker() {
       setLoading(true);
       await resetApplicationsInDB();
       setApplications([]);
+      broadcastApplicationsUpdated();
     } catch (err) {
       console.error('Failed to clear applications:', err);
     } finally {
