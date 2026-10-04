@@ -1,0 +1,30 @@
+# Keep the build context minimal and hermetic.
+#
+# Without this, `COPY . .` in the builder stage copies the host's Windows
+# node_modules (and a stale dist/) over the container's Linux install, so
+# `npm run build` runs against mismatched native binaries.
+
+node_modules
+npm-debug.log*
+yarn-error.log*
+package-lock.json.bak
+
+# Secrets and VITE_ vars are injected at build time by the caller, not baked in.
+.env
+.env.*
+!.env.example
+
+# Never ship local build output into the builder.
+dist
+build
+coverage
+*.log
+
+# Tooling and VCS metadata.
+.eslintrc.json
+Dockerfile
+.dockerignore
+.git
+.gitignore
+.vscode
+.idea

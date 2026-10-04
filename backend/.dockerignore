@@ -1,0 +1,31 @@
+# Keep the build context minimal and hermetic.
+#
+# Without this, `COPY . .` in the Dockerfile copies the host's Windows
+# node_modules over the container's freshly installed Linux modules, which
+# breaks the runtime with ESBUILD/NODE_MODULE_VERSION errors.
+
+node_modules
+npm-debug.log*
+yarn-error.log*
+package-lock.json.bak
+
+# Secrets must never enter an image layer.
+.env
+.env.*
+!.env.example
+
+# Tests, tooling and docs are not needed at runtime.
+.eslintrc.json
+Dockerfile
+.dockerignore
+.git
+.gitignore
+.vscode
+.idea
+
+# Never ship build output or uploads.
+dist
+build
+coverage
+uploads
+*.log
