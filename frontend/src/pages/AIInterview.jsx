@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Mic, MicOff, Volume2, VolumeX, Bot, ArrowRight, CheckCircle2, AlertTriangle, RotateCcw,
-  Sparkles, Award, Clock, HelpCircle, ChevronRight, Zap, Target
+  Sparkles, Award, Clock, HelpCircle, ChevronRight, Zap, Target, Loader2, ListChecks
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { evaluateInterviewSession, updateProfileInDB } from '../services/api';
+import {
+  evaluateInterviewSession, updateProfileInDB, generateInterviewQuestions,
+  fetchProfileFromDB, fetchLatestResume, api
+} from '../services/api';
+import { buildCandidateContext, buildFallbackQuestions } from '../services/interviewQuestions';
 
 export default function AIInterview() {
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -15,6 +19,13 @@ export default function AIInterview() {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState(null);
   const [evalError, setEvalError] = useState(null);
+
+  // Adaptive question set (#30)
+  const [questions, setQuestions] = useState([]);
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(true);
+  const [questionSource, setQuestionSource] = useState(null);
+  const [targetRole, setTargetRole] = useState('Full-Stack Software Engineer');
+  const [showCriteria, setShowCriteria] = useState(false);
 
   // Speech-to-Text & Text-to-Speech state
   const [isListening, setIsListening] = useState(false);
@@ -31,6 +42,68 @@ export default function AIInterview() {
         window.speechSynthesis.cancel();
       }
     };
+  }, []);
+
+  // Build the question set from verified profile data: target role, resume
+  // skills/projects and the repos already indexed from GitHub. Each source is
+  // fetched defensively so one missing endpoint cannot block generation.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadQuestions = async () => {
+      setIsGeneratingQuestions(true);
+
+      const [profile, resume, repos] = await Promise.all([
+        fetchProfileFromDB().catch(() => null),
+        fetchLatestResume().catch(() => null),
+        (async () => {
+          try {
+            const username = profile?.github_username || resume?.github_username;
+            if (!username) return [];
+            const res = await api.get(`/github/user/${encodeURIComponent(username)}/repos`);
+            return res.data?.repos || res.data?.repositories || [];
+          } catch (err) {
+            console.warn('Repository lookup unavailable for question grounding:', err);
+            return [];
+          }
+        })(),
+      ]);
+
+      if (cancelled) return;
+
+      const context = buildCandidateContext({ profile, resume, repos });
+
+      try {
+        const pack = await generateInterviewQuestions({
+          role: context.role,
+          skills: context.skills,
+          project_descriptions: context.project_descriptions,
+          repositories: context.repositories,
+        });
+
+        if (cancelled) return;
+
+        if (pack?.questions?.length) {
+          setQuestions(pack.questions);
+          setQuestionSource(pack.provider_used || 'adaptive');
+          setTargetRole(pack.target_role || context.role);
+          return;
+        }
+        throw new Error('Empty question set');
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Adaptive question generation failed, using local bank:', err);
+        setQuestions(buildFallbackQuestions(context));
+        setQuestionSource('offline-fallback');
+        setTargetRole(context.role);
+      } finally {
+        if (!cancelled) setIsGeneratingQuestions(false);
+      }
+    };
+
+    loadQuestions();
+
+    return () => { cancelled = true; };
   }, []);
 
   const toggleListening = () => {
@@ -118,33 +191,6 @@ export default function AIInterview() {
     window.speechSynthesis.speak(utterance);
   };
 
-  const questions = [
-    {
-      id: 1,
-      category: 'System Architecture',
-      question: 'Walk me through how your internship management system handles concurrent check-ins and database race conditions.',
-      expectedPoints: ['PostgreSQL transactions or row-level locks', 'Fastify middleware verification', 'Idempotency keys'],
-    },
-    {
-      id: 2,
-      category: 'API Security & Auth',
-      question: 'How do you secure JWT access and refresh token rotation in your backend service?',
-      expectedPoints: ['Short-lived access tokens', 'HttpOnly secure cookies for refresh tokens', 'Argon2id hashing'],
-    },
-    {
-      id: 3,
-      category: 'Performance & Scaling',
-      question: 'Suppose your API starts receiving 10x traffic during attendance peak times. What caching and optimization strategies would you implement?',
-      expectedPoints: ['Redis caching for read queries', 'Connection pooling optimization', 'Nginx load balancing and rate limiting'],
-    },
-    {
-      id: 4,
-      category: 'Behavioral & Ownership',
-      question: 'Tell me about a time you encountered a critical production bug right before deployment. How did you resolve it under pressure?',
-      expectedPoints: ['Calm root-cause analysis', 'Reproducing in staging environment', 'Post-mortem documentation'],
-    },
-  ];
-
   const handleStartSession = () => {
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (e) {}
@@ -155,6 +201,7 @@ export default function AIInterview() {
     setIsListening(false);
     setIsSpeaking(false);
     setSpeechError(null);
+    setShowCriteria(false);
     setSessionStarted(true);
     setCurrentQuestionIndex(0);
     setUserAnswer('');
@@ -164,8 +211,10 @@ export default function AIInterview() {
     setEvalError(null);
   };
 
+  const currentQuestion = questions[currentQuestionIndex] || null;
+
   const handleSubmitAnswer = async () => {
-    if (!userAnswer.trim()) return;
+    if (!userAnswer.trim() || !currentQuestion) return;
 
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (e) {}
@@ -176,11 +225,12 @@ export default function AIInterview() {
     setIsListening(false);
     setIsSpeaking(false);
 
-    const nextAnswers = [...answers, { question: questions[currentQuestionIndex], answer: userAnswer }];
+    const nextAnswers = [...answers, { question: currentQuestion, answer: userAnswer }];
     setAnswers(nextAnswers);
     setUserAnswer('');
 
     if (currentQuestionIndex + 1 < questions.length) {
+      setShowCriteria(false);
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
       setIsEvaluating(true);
@@ -190,13 +240,13 @@ export default function AIInterview() {
         question_id: item.question.id,
         category: item.question.category,
         question: item.question.question,
-        expected_points: item.question.expectedPoints,
+        expected_points: item.question.expected_points || item.question.expectedPoints || [],
         answer: item.answer,
       }));
 
       let finalScore = 84;
       try {
-        const report = await evaluateInterviewSession(formattedPayload, 'Full-Stack Software Engineer');
+        const report = await evaluateInterviewSession(formattedPayload, targetRole);
         setEvaluationResult(report);
         if (report?.overall_score) {
           finalScore = report.overall_score;
@@ -240,7 +290,9 @@ export default function AIInterview() {
     }
   };
 
-  const progressPercent = Math.round(((currentQuestionIndex + 1) / questions.length) * 100);
+  const progressPercent = questions.length
+    ? Math.round(((currentQuestionIndex + 1) / questions.length) * 100)
+    : 0;
 
   return (
     <div className="space-y-8 animate-fade-up">
@@ -270,7 +322,7 @@ export default function AIInterview() {
         <div className="bg-surface rounded-card border border-border p-5 shadow-2xs">
           <span className="text-xs font-semibold text-text-body">Interview Mode</span>
           <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black text-text-dark">Full-Stack Defense</span>
+            <span className="text-2xl font-black text-text-dark">{targetRole}</span>
           </div>
           <p className="text-[11px] text-text-muted mt-2">Customized from your uploaded resume & GitHub</p>
         </div>
@@ -278,9 +330,17 @@ export default function AIInterview() {
         <div className="bg-surface rounded-card border border-border p-5 shadow-2xs">
           <span className="text-xs font-semibold text-text-body">Session Length</span>
           <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-2xl font-black text-secondary">4 Questions</span>
+            <span className="text-2xl font-black text-secondary">
+              {isGeneratingQuestions ? 'Building…' : `${questions.length} Questions`}
+            </span>
           </div>
-          <p className="text-[11px] text-text-muted mt-2">~10 minutes focused mock defense</p>
+          <p className="text-[11px] text-text-muted mt-2">
+            {isGeneratingQuestions
+              ? 'Synthesising from your profile'
+              : questionSource === 'llm'
+                ? 'Adaptive set generated from your verified profile'
+                : 'Standard curriculum set'}
+          </p>
         </div>
 
         <div className="bg-surface rounded-card border border-border p-5 shadow-2xs">
@@ -318,13 +378,27 @@ export default function AIInterview() {
             </div>
           </div>
 
+          {isGeneratingQuestions && (
+            <div className="flex items-center justify-center gap-2 text-xs text-text-muted">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>Building your question set from resume skills and GitHub repos...</span>
+            </div>
+          )}
+
           <button
             onClick={handleStartSession}
-            className="btn-accent text-sm font-bold px-8 py-3.5"
+            disabled={isGeneratingQuestions || questions.length === 0}
+            className="btn-accent text-sm font-bold px-8 py-3.5 disabled:opacity-50"
           >
-            <span>Start Technical Interview</span>
+            <span>{isGeneratingQuestions ? 'Preparing Questions' : 'Start Technical Interview'}</span>
             <ArrowRight className="h-4 w-4" />
           </button>
+        </div>
+      ) : !currentQuestion ? (
+        <div className="bg-surface rounded-card border border-border p-16 text-center max-w-md mx-auto shadow-2xs space-y-4">
+          <AlertTriangle className="h-8 w-8 text-warning mx-auto" />
+          <h3 className="text-base font-bold text-text-dark">Question set unavailable</h3>
+          <p className="text-xs text-text-body">Reload the page to regenerate your interview questions.</p>
         </div>
       ) : isEvaluating ? (
         /* Evaluation Loading */
@@ -479,14 +553,22 @@ export default function AIInterview() {
           {/* The Current Question Card */}
           <div className="bg-white rounded-xl p-6 border border-border space-y-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
-                <span>{questions[currentQuestionIndex].category}</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
+                  <Target className="h-3 w-3" />
+                  <span>{currentQuestion.category}</span>
+                </span>
+                {currentQuestion.difficulty && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-white border border-border text-text-muted text-[11px] font-bold capitalize">
+                    {currentQuestion.difficulty}
+                  </span>
+                )}
               </div>
 
               {/* Text-to-Speech (TTS) Voice Prompt */}
               <button
                 type="button"
-                onClick={() => toggleSpeaking(questions[currentQuestionIndex].question)}
+                onClick={() => toggleSpeaking(currentQuestion.question)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
                   isSpeaking
                     ? 'bg-amber-500/10 border-amber-500/40 text-amber-700 animate-pulse'
@@ -500,8 +582,38 @@ export default function AIInterview() {
             </div>
 
             <h3 className="text-base sm:text-lg font-bold text-text-dark leading-snug">
-              {questions[currentQuestionIndex].question}
+              {currentQuestion.question}
             </h3>
+
+            {currentQuestion.context && (
+              <p className="text-[11px] text-text-muted border-l-2 border-primary/30 pl-2">
+                Based on: {currentQuestion.context}
+              </p>
+            )}
+
+            {currentQuestion.expected_points?.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowCriteria((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-primary hover:text-text-dark"
+                  aria-expanded={showCriteria}
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  <span>{showCriteria ? 'Hide' : 'Show'} what interviewers look for</span>
+                  <ChevronRight className={`h-3 w-3 transition-transform ${showCriteria ? 'rotate-90' : ''}`} />
+                </button>
+
+                {showCriteria && (
+                  <ul className="mt-2 space-y-1 list-disc list-inside text-[11px] text-text-body">
+                    {currentQuestion.expected_points.map((point, i) => (
+                      <li key={i}>{point}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
             <p className="text-xs text-text-muted">
               Speak naturally as you would in a live screening call with an engineering manager.
             </p>

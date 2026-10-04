@@ -162,6 +162,11 @@ export const resetApplicationsInDB = async () => {
 };
 
 // ---------- AI Interview APIs ----------
+export const generateInterviewQuestions = async (payload) => {
+  const res = await api.post('/interview/generate-questions', payload);
+  return res.data?.data;
+};
+
 export const evaluateInterviewSession = async (responses, role) => {
   const res = await api.post('/interview/evaluate', { responses, role });
   return res.data?.data;
