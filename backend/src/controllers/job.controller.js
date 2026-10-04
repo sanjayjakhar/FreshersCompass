@@ -1,5 +1,21 @@
 import { fetchLiveJobs } from "../services/job.service.js";
 
+/**
+ * Normalise a free-text job type into a comparable slug.
+ * Upstream providers emit "Full Time", "full-time", "FULL_TIME" or nothing at
+ * all, so every comparison must go through this before matching.
+ */
+const normalizeJobType = (value) =>
+  String(value ?? "")
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ")
+    .trim();
+
+const JOB_TYPE_FILTERS = {
+  internship: "internship",
+  "full time": "full time",
+};
+
 const filterJobs = (jobs, filters) => {
   const { grad_year, type, location, domain, search } = filters;
 
@@ -13,10 +29,8 @@ const filterJobs = (jobs, filters) => {
 
     // 2. Type filter (Internship vs Full Time)
     if (type && type !== "all") {
-      if (type.toLowerCase() === "internship" && j.type.toLowerCase() !== "internship") {
-        return false;
-      }
-      if (type.toLowerCase() === "full-time" && j.type.toLowerCase() !== "full time") {
+      const wantedType = JOB_TYPE_FILTERS[normalizeJobType(type)];
+      if (wantedType && normalizeJobType(j.type) !== wantedType) {
         return false;
       }
     }
