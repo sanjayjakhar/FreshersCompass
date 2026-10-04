@@ -1,10 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Mic, MicOff, Volume2, VolumeX, Bot, ArrowRight, CheckCircle2, AlertTriangle, RotateCcw,
   Sparkles, Award, Clock, HelpCircle, ChevronRight, Zap, Target
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { evaluateInterviewSession, updateProfileInDB } from '../services/api';
+import MicWaveform from '../components/MicWaveform';
+import useMicMeter from '../hooks/useMicMeter';
+
+/** Silence (ms) after which the answer is treated as finished. */
+const SILENCE_TIMEOUT_MS = 3500;
 
 export default function AIInterview() {
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -20,7 +25,33 @@ export default function AIInterview() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechError, setSpeechError] = useState(null);
+  const [silencePrompt, setSilencePrompt] = useState(null);
+  const [isMuted, setIsMuted] = useState(false);
   const recognitionRef = useRef(null);
+
+  /**
+   * Live mic metering + silence auto-stop (#43, #59).
+   *
+   * Silence only *flags* completion: the candidate may be mid-thought after a
+   * pause, so recognition is left running and they confirm or dismiss it. That
+   * avoids destroying a half-spoken answer while still saving them the reach for
+   * the mouse.
+   */
+  const stopRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+    }
+    setIsListening(false);
+  }, []);
+
+  const mic = useMicMeter({
+    silenceTimeoutMs: SILENCE_TIMEOUT_MS,
+    onSilenceTimeout: () => {
+      setSilencePrompt(
+        `No speech detected for ${(SILENCE_TIMEOUT_MS / 1000).toFixed(1)}s. Submit your answer, or keep talking to continue.`
+      );
+    },
+  });
 
   useEffect(() => {
     return () => {
@@ -33,7 +64,7 @@ export default function AIInterview() {
     };
   }, []);
 
-  const toggleListening = () => {
+  const toggleListening = async () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setSpeechError('Speech recognition is not supported in this browser. Please use Google Chrome, Edge, or Safari.');
@@ -41,10 +72,8 @@ export default function AIInterview() {
     }
 
     if (isListening) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) {}
-      }
-      setIsListening(false);
+      stopRecognition();
+      mic.stop();
       return;
     }
 
@@ -71,6 +100,7 @@ export default function AIInterview() {
             const trimmed = prev.trim();
             return trimmed ? `${trimmed} ${finalTranscript.trim()}` : finalTranscript.trim();
           });
+          setSilencePrompt(null);
         }
       };
 
@@ -89,12 +119,52 @@ export default function AIInterview() {
 
       recognitionRef.current = recognition;
       recognition.start();
+
+      // Metering is best-effort: if the mic is blocked the interview keeps
+      // working, we just lose the waveform and silence detection.
+      mic.start();
     } catch (err) {
       console.error('Speech recognition error:', err);
       setSpeechError('Could not start microphone dictation.');
       setIsListening(false);
     }
   };
+
+  const handleToggleMute = useCallback(() => {
+    // Pausing only means something while dictation is actually running.
+    if (!isListening) return;
+    mic.toggleMute();
+    setIsMuted((prev) => !prev);
+  }, [isListening, mic]);
+
+  // Keyboard quick-toggle: "M" anywhere outside a text field, Spacebar only when
+  // focus is not in a control (otherwise it would swallow typing).
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!sessionStarted || isCompleted) return;
+
+      const target = event.target;
+      const tag = target?.tagName;
+      const inTextField = tag === 'TEXTAREA' || tag === 'INPUT' || target?.isContentEditable;
+
+      const isM = event.key === 'm' || event.key === 'M';
+      const isSpace = event.code === 'Space' || event.key === ' ';
+
+      if (isM && !inTextField) {
+        event.preventDefault();
+        handleToggleMute();
+      } else if (isSpace && !inTextField && tag !== 'BUTTON') {
+        event.preventDefault();
+        if (isListening || mic.status === 'listening' || mic.status === 'muted') {
+          handleToggleMute();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleToggleMute, isListening, mic.status, sessionStarted, isCompleted]);
 
   const toggleSpeaking = (text) => {
     if (!('speechSynthesis' in window)) {
@@ -152,6 +222,11 @@ export default function AIInterview() {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    // Release the mic hardware too, otherwise the meter keeps drawing in the
+    // background for a session that has not started yet.
+    mic.stop();
+    setIsMuted(false);
+    setSilencePrompt(null);
     setIsListening(false);
     setIsSpeaking(false);
     setSpeechError(null);
@@ -173,6 +248,9 @@ export default function AIInterview() {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    mic.stop();
+    setIsMuted(false);
+    setSilencePrompt(null);
     setIsListening(false);
     setIsSpeaking(false);
 
@@ -531,26 +609,178 @@ export default function AIInterview() {
                 Your Answer / Explanation:
               </label>
 
-              {/* Speech-to-Text (STT) Button */}
-              <button
-                type="button"
-                onClick={toggleListening}
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
-                  isListening
-                    ? 'bg-red-500/10 border-red-500/40 text-red-600 shadow-xs animate-pulse'
-                    : 'bg-white border-border text-text-muted hover:text-text-dark hover:border-primary/40'
-                }`}
-                title={isListening ? 'Stop listening' : 'Start voice dictation'}
-              >
-                {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-                <span>{isListening ? 'Listening (Click to Stop)...' : 'Answer with Voice (Speech-to-Text)'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Mute / pause quick toggle (#43) */}
+                {isListening && (
+                  <button
+                    type="button"
+                    onClick={handleToggleMute}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                      isMuted
+                        ? 'bg-text-muted/10 border-text-muted/40 text-text-dark'
+                        : 'bg-white border-border text-text-muted hover:text-text-dark hover:border-primary/40'
+                    }`}
+                    title={isMuted ? 'Resume microphone capture (M)' : 'Pause microphone capture while you think (M)'}
+                    aria-pressed={isMuted}
+                  >
+                    {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                    <span>{isMuted ? 'Paused (M)' : 'Pause (M)'}</span>
+                  </button>
+                )}
+
+                {/* Speech-to-Text (STT) Button */}
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                    isListening
+                      ? 'bg-red-500/10 border-red-500/40 text-red-600 shadow-xs animate-pulse'
+                      : 'bg-white border-border text-text-muted hover:text-text-dark hover:border-primary/40'
+                  }`}
+                  title={isListening ? 'Stop listening' : 'Start voice dictation'}
+                >
+                  {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                  <span>{isListening ? 'Listening (Click to Stop)...' : 'Answer with Voice (Speech-to-Text)'}</span>
+                </button>
+              </div>
             </div>
+
+            {/* Mic status + live waveform (#43, #59) */}
+            <div
+              className={`rounded-xl border p-3 space-y-2 transition-colors ${
+                mic.status === 'denied' || mic.status === 'error'
+                  ? 'border-red-300 bg-red-50'
+                  : isMuted || mic.status === 'muted'
+                  ? 'border-border bg-surface-muted'
+                  : mic.isSilent
+                  ? 'border-warning/50 bg-warning/5'
+                  : mic.status === 'listening'
+                  ? 'border-success/40 bg-success/5'
+                  : 'border-border bg-white'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {mic.status === 'denied' || mic.status === 'error' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-red-600 shrink-0" />
+                      <span className="text-red-700">Microphone blocked</span>
+                    </>
+                  ) : mic.status === 'unsupported' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-text-muted shrink-0" />
+                      <span className="text-text-muted">Meter unavailable in this browser</span>
+                    </>
+                  ) : mic.status === 'muted' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-text-muted shrink-0" />
+                      <span className="text-text-dark">Capture paused — thinking time</span>
+                    </>
+                  ) : mic.status === 'requesting' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-warning animate-pulse shrink-0" />
+                      <span className="text-warning">Requesting microphone…</span>
+                    </>
+                  ) : mic.status === 'listening' && mic.isSilent ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-warning animate-pulse shrink-0" />
+                      <span className="text-warning">Silence detected — answer looks complete</span>
+                    </>
+                  ) : mic.status === 'listening' ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
+                      <span className="text-success">Listening — microphone is live</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-text-muted shrink-0" />
+                      <span className="text-text-muted">Microphone idle</span>
+                    </>
+                  )}
+                </span>
+
+                <span className="text-[10px] font-mono font-bold text-text-muted">
+                  {mic.status === 'listening' ? `${Math.round(mic.level * 100)}%` : '—'}
+                  {mic.isClipping && mic.status === 'listening' && (
+                    <span className="text-warning ml-1.5">clipping</span>
+                  )}
+                </span>
+              </div>
+
+              <MicWaveform
+                level={mic.level}
+                active={mic.status === 'listening'}
+                status={mic.status}
+                height={52}
+              />
+
+              {mic.status === 'denied' && (
+                <p className="text-[11px] text-red-700 leading-relaxed">
+                  {mic.error}
+                </p>
+              )}
+
+              {mic.isSilent && (
+                <p className="text-[11px] text-warning font-semibold">
+                  No speech for {(mic.silenceMs / 1000).toFixed(1)}s (auto-stop threshold{' '}
+                  {(SILENCE_TIMEOUT_MS / 1000).toFixed(1)}s).
+                </p>
+              )}
+
+              <p className="text-[10px] text-text-muted leading-relaxed">
+                Tip: press <kbd className="font-mono font-bold">M</kbd> to pause capture while you
+                formulate your answer, then press it again to resume.
+              </p>
+            </div>
+
+            {/* Silence auto-stop prompt (#59) */}
+            {silencePrompt && (
+              <div
+                role="alert"
+                className="p-3 bg-warning/10 border border-warning/40 rounded-xl flex items-center justify-between gap-3 text-xs text-warning"
+              >
+                <span className="inline-flex items-center gap-2 font-semibold">
+                  <Clock className="h-4 w-4 shrink-0" />
+                  <span>{silencePrompt}</span>
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSilencePrompt(null);
+                      mic.start();
+                    }}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white border border-warning/40 hover:bg-warning/10"
+                  >
+                    Keep talking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSilencePrompt(null);
+                      stopRecognition();
+                      mic.stop();
+                      setIsMuted(false);
+                    }}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg btn-accent"
+                  >
+                    Submit
+                  </button>
+                </span>
+              </div>
+            )}
 
             <textarea
               rows={6}
               value={userAnswer}
-              onChange={(e) => setUserAnswer(e.target.value)}
+              onChange={(e) => {
+                setUserAnswer(e.target.value);
+                if (e.target.value.trim()) setSilencePrompt(null);
+              }}
               placeholder="Speak using the voice button above, or type your technical breakdown here..."
               className="w-full p-4 bg-white rounded-xl border border-border text-xs text-text-dark focus:outline-none focus:border-primary leading-relaxed font-sans"
               autoFocus
