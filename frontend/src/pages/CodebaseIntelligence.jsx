@@ -9,6 +9,7 @@ import {
   Trash2, Info
 } from 'lucide-react';
 import api, { fetchProfileFromDB, updateProfileInDB } from '../services/api';
+import CandidateAvatar from '../components/CandidateAvatar';
 
 // ---------- Circular Animated Health Score Ring ----------
 function ScoreRing({ score, label, sublabel, size = 110, strokeWidth = 8, colorOverride = null }) {
@@ -678,10 +679,12 @@ export default function CodebaseIntelligence() {
             <div className="mt-4 pt-4 border-t border-border animate-fade-up">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2.5">
-                  <img
+                  <CandidateAvatar
                     src={syncedProfile.avatar_url}
-                    alt={syncedProfile.login}
-                    className="w-7 h-7 rounded-full border border-border"
+                    name={syncedProfile.name || syncedProfile.login}
+                    username={syncedProfile.login}
+                    size="xs"
+                    rounded="rounded-full"
                   />
                   <span className="text-xs font-bold text-text-dark">
                     {syncedProfile.name || syncedProfile.login}

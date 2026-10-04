@@ -148,6 +148,7 @@ export const getPublicProfile = async (req, res) => {
         data: {
           candidate_name: fallbackName || 'Developer Candidate',
           github_username: cleanUsername,
+          avatar_url: `https://github.com/${cleanUsername}.png`,
           email: `${cleanUsername.toLowerCase()}@example.com`,
           headline: 'Fullstack Engineer & Systems Builder',
           bio: 'Passionate about writing high-performance APIs, distributed systems, and real-time developer tooling.',
@@ -189,9 +190,13 @@ export const getPublicProfile = async (req, res) => {
     }
 
     // 4. Merge verified profile and resume data
+    const resolvedGithubUser = profile?.github_username || resume?.github_username || cleanUsername;
     const publicData = {
       candidate_name: profile?.candidate_name || resume?.name || cleanUsername,
-      github_username: profile?.github_username || resume?.github_username || cleanUsername,
+      github_username: resolvedGithubUser,
+      // GitHub serves a deterministic avatar for every account; the frontend
+      // CandidateAvatar component handles the null / failed-load cases.
+      avatar_url: resolvedGithubUser ? `https://github.com/${resolvedGithubUser}.png` : null,
       email: resume?.email || '',
       headline: profile?.headline || 'Fullstack Engineer & Systems Builder',
       bio: profile?.bio || profile?.about || 'Software engineer specializing in modern web applications.',

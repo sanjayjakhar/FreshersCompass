@@ -4,6 +4,7 @@ import {
   Github, Mail, Code2, ArrowUpRight
 } from 'lucide-react';
 import { fetchLatestResume, fetchProfileFromDB, updateProfileInDB } from '../services/api';
+import CandidateAvatar from '../components/CandidateAvatar';
 
 export default function PortfolioGenerator() {
   const [name, setName] = useState('');
@@ -278,9 +279,11 @@ export default function PortfolioGenerator() {
                 </div>
               </div>
 
-              <div className="w-16 h-16 rounded-2xl bg-surface border border-border flex items-center justify-center font-black text-xl text-primary shrink-0">
-                {(name || 'FC').slice(0, 2).toUpperCase()}
-              </div>
+              <CandidateAvatar
+                name={name}
+                username={githubUser}
+                size="lg"
+              />
             </div>
 
             {/* About */}
