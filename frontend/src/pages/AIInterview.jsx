@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { evaluateInterviewSession, updateProfileInDB } from '../services/api';
+import { useOfflineMode, OfflineModeBadge } from '../hooks/useOfflineMode';
 
 export default function AIInterview() {
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -21,6 +22,7 @@ export default function AIInterview() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechError, setSpeechError] = useState(null);
   const recognitionRef = useRef(null);
+  const { report: reportOffline } = useOfflineMode();
 
   useEffect(() => {
     return () => {
@@ -198,12 +200,14 @@ export default function AIInterview() {
       try {
         const report = await evaluateInterviewSession(formattedPayload, 'Full-Stack Software Engineer');
         setEvaluationResult(report);
+        reportOffline(Boolean(report?.offline_mode));
         if (report?.overall_score) {
           finalScore = report.overall_score;
         }
       } catch (err) {
         console.error('Interview evaluation error:', err);
         setEvalError('Online LLM evaluation hit latency limit; generated heuristic scoring analysis.');
+        reportOffline(true);
         setEvaluationResult({
           overall_score: 84,
           technical_clarity: 86,
@@ -247,9 +251,12 @@ export default function AIInterview() {
       {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-primary tracking-tight">
-            AI Interview Simulator
-          </h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-primary tracking-tight">
+              AI Interview Simulator
+            </h1>
+            <OfflineModeBadge />
+          </div>
           <p className="text-text-body text-sm mt-1">
             Distraction-free technical & behavioral interview room with instant evaluation.
           </p>

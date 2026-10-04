@@ -1,8 +1,7 @@
 import os
 import json
 from typing import Dict, Any, List, Optional
-import google.generativeai as genai
-from app.services.gemini import init_gemini
+from app.services import llm_service
 
 def evaluate_interview_session(
     responses: List[Dict[str, Any]],
@@ -22,7 +21,8 @@ def evaluate_interview_session(
             "strong_points": [],
             "areas_to_polish": ["Complete the interview questions to receive detailed feedback."],
             "per_question_feedback": [],
-            "provider_used": "none"
+            "provider_used": "none",
+            "offline_mode": False
         }
 
     formatted_qna = []
@@ -72,81 +72,18 @@ Return your response STRICTLY as a JSON object matching this schema:
 }}
 """
 
-    # 1. Try Gemini (gemini-1.5-flash / gemini-2.0-flash)
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    if gemini_key:
-        try:
-            init_gemini()
-            gemini_models = [
-                os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-                "gemini-2.5-flash",
-                "gemini-3.8-flash",
-                "gemini-2.5-flash-lite",
-            ]
-            seen_gemini = set()
-            for model_name in gemini_models:
-                if model_name in seen_gemini:
-                    continue
-                seen_gemini.add(model_name)
-                try:
-                    m = genai.GenerativeModel(model_name)
-                    resp = m.generate_content(
-                        prompt,
-                        generation_config=genai.GenerationConfig(
-                            response_mime_type="application/json",
-                            temperature=0.3
-                        ),
-                        request_options={"timeout": 12}
-                    )
-                    if resp and resp.text and resp.text.strip():
-                        result = json.loads(resp.text.strip())
-                        result["provider_used"] = model_name
-                        return result
-                except Exception as m_err:
-                    print(f"[Interview AI] Gemini {model_name} notice: {m_err}")
-                    continue
-        except Exception as g_err:
-            print(f"[Interview AI] Gemini init notice: {g_err}")
+    # 1. Provider chain (Gemini, then Groq) behind the shared circuit breaker
+    try:
+        result, model_used = llm_service.complete_json(prompt, temperature=0.3)
+        if isinstance(result, dict) and "overall_score" in result:
+            result["provider_used"] = model_used
+            result["offline_mode"] = False
+            return result
+        print("[Interview AI] Provider response missing overall_score, scoring heuristically")
+    except Exception as e:
+        print(f"[Interview AI] provider chain unavailable: {e}")
 
-    # 2. Try Groq
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        try:
-            from groq import Groq
-            client = Groq(api_key=groq_key, timeout=10.0)
-            groq_models = [
-                os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
-                "openai/gpt-oss-120b",
-                "openai/gpt-oss-20b",
-                "qwen/qwen3.8-27b",
-            ]
-            seen_groq = set()
-            for model_name in groq_models:
-                if model_name in seen_groq:
-                    continue
-                seen_groq.add(model_name)
-                try:
-                    chat = client.chat.completions.create(
-                        messages=[
-                            {"role": "system", "content": "You are a Staff Software Engineering Interviewer. Return strictly valid JSON matching the requested schema."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        model=model_name,
-                        response_format={"type": "json_object"},
-                        temperature=0.3
-                    )
-                    text = chat.choices[0].message.content
-                    if text and text.strip():
-                        result = json.loads(text.strip())
-                        result["provider_used"] = model_name
-                        return result
-                except Exception as q_err:
-                    print(f"[Interview AI] Groq {model_name} notice: {q_err}")
-                    continue
-        except Exception as grq_err:
-            print(f"[Interview AI] Groq error: {grq_err}")
-
-    # 3. Intelligent Deterministic Heuristic Fallback
+    # 2. Deterministic heuristic scoring when no provider is reachable
     total_expected_matches = 0
     total_expected_count = 0
     total_words = 0
@@ -190,5 +127,6 @@ Return your response STRICTLY as a JSON object matching this schema:
             "Mention failure handling and circuit breaking during high concurrency discussion"
         ],
         "per_question_feedback": per_q,
-        "provider_used": "deterministic-heuristic-evaluator"
+        "provider_used": "deterministic-heuristic-evaluator",
+        "offline_mode": True
     }

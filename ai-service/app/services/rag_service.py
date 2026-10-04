@@ -3,8 +3,7 @@ import json
 import re
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
-import google.generativeai as genai
-from app.services.gemini import init_gemini
+from app.services import llm_service, offline_heuristics
 
 # In-memory vector store cache for fast local RAG queries
 # Format: { "owner/repo": { "chunks": [...], "embeddings": np.ndarray, "normalized_embeddings": np.ndarray } }
@@ -133,84 +132,13 @@ def retrieve_relevant_chunks(repo_full_name: str, query: str, top_k: int = 5) ->
 
 def execute_codebase_llm(prompt: str) -> Tuple[str, str]:
     """
-    Calls primary LLM (Gemini) or secondary LLM (Groq) with the retrieved prompt.
-    Returns (answer_text, provider_model_used).
+    Calls the shared provider layer (Gemini, then Groq) through the circuit breaker.
+
+    Returns (answer_text, provider_model_used). Raises LLMUnavailable when no
+    provider can serve the prompt, so the caller can fall back to deterministic
+    synthesis instead of shipping an error string as if it were an answer.
     """
-    # 1. Primary: Gemini (gemini-1.5-flash / gemini-2.0-flash)
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    if gemini_key:
-        try:
-            init_gemini()
-            gemini_models = [
-                os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-                "gemini-2.5-flash",
-                "gemini-3.8-flash",
-                "gemini-2.5-flash-lite",
-            ]
-            seen_gemini = set()
-            for model_name in gemini_models:
-                if model_name in seen_gemini:
-                    continue
-                seen_gemini.add(model_name)
-                try:
-                    m = genai.GenerativeModel(model_name)
-                    resp = m.generate_content(
-                        prompt,
-                        generation_config=genai.GenerationConfig(temperature=0.2),
-                        request_options={"timeout": 12}
-                    )
-                    if resp and resp.text and resp.text.strip():
-                        return resp.text.strip(), f"Google Gemini ({model_name})"
-                except Exception as m_err:
-                    print(f"[RAG Q&A] Gemini {model_name} notice: {m_err}")
-                    continue
-        except Exception as g_err:
-            print(f"[RAG Q&A] Gemini initialization notice: {g_err}")
-
-    # 2. Secondary Fallback: Groq
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        try:
-            from groq import Groq
-            client = Groq(api_key=groq_key, timeout=10.0)
-            groq_models = [
-                os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
-                "openai/gpt-oss-120b",
-                "openai/gpt-oss-20b",
-                "qwen/qwen3.8-27b",
-            ]
-            seen_groq = set()
-            for model_name in groq_models:
-                if model_name in seen_groq:
-                    continue
-                seen_groq.add(model_name)
-                try:
-                    chat = client.chat.completions.create(
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are an expert technical AI Codebase Assistant. Answer developer questions accurately and specifically based on the provided code snippets."
-                            },
-                            {"role": "user", "content": prompt}
-                        ],
-                        model=model_name,
-                        max_tokens=800,
-                        temperature=0.2
-                    )
-                    text = chat.choices[0].message.content
-                    if text and text.strip():
-                        return text.strip(), f"Groq ({model_name})"
-                except Exception as q_err:
-                    print(f"[RAG Q&A] Groq {model_name} notice: {q_err}")
-                    continue
-        except Exception as grq_err:
-            print(f"[RAG Q&A] Groq client error: {grq_err}")
-
-    # 3. Honest Error (no hardcoded fake text)
-    return (
-        "Couldn't generate an answer from the codebase at this time due to LLM provider availability. Please verify API keys or try again in a moment.",
-        "None (Error)"
-    )
+    return llm_service.complete(prompt, temperature=0.2, timeout=12)
 
 def answer_codebase_question(
     repo_full_name: str, 
@@ -278,9 +206,17 @@ Primary Language: {meta.get('primary_language', 'Unknown')}
     print(f"Full Prompt sent to LLM:\n{system_prompt}")
     print("=" * 80 + "\n")
 
-    # Call LLM (Gemini with automatic Groq fallback)
-    answer_text, model_used = execute_codebase_llm(system_prompt)
-    print(f"[RAG Q&A] Answer successfully produced by: {model_used}\n")
+    # Call LLM through the circuit breaker; on outage answer from the retrieved
+    # code instead, so chat stays useful offline and says so.
+    offline = False
+    try:
+        answer_text, model_used = execute_codebase_llm(system_prompt)
+        print(f"[RAG Q&A] Answer successfully produced by: {model_used}\n")
+    except llm_service.LLMUnavailable as unavailable:
+        offline = True
+        model_used = "Offline Deterministic"
+        answer_text = offline_heuristics.chat_answer(question, relevant_chunks, repo_full_name)
+        print(f"[RAG Q&A] Offline fallback engaged: {unavailable}\n")
 
     # Citations list
     citations = [
@@ -296,24 +232,20 @@ Primary Language: {meta.get('primary_language', 'Unknown')}
     return {
         "answer": answer_text,
         "citations": citations,
-        "model_used": model_used
+        "model_used": model_used,
+        "offline_mode": offline
     }
 
-def generate_recruiter_pitch(meta: Dict[str, Any], health: Dict[str, Any]) -> List[str]:
-    """Generates 3-5 high-impact resume bullet points using Google's XYZ formula."""
+def generate_recruiter_pitch(meta: Dict[str, Any], health: Dict[str, Any]) -> Tuple[List[str], bool]:
+    """
+    XYZ-formatted resume bullets for the indexed repository.
+
+    Returns (bullets, offline_mode) so the caller can label deterministic output
+    instead of passing synthesised text off as generated.
+    """
     tech_stack_str = ", ".join(health.get("tech_stack", []))
-    default_bullets = [
-        f"Architected full-stack application using {tech_stack_str or 'modern web technologies'} featuring modular architecture and clean separation of concerns.",
-        f"Engineered robust end-to-end data pipelines with error resilience and automated workflows.",
-        f"Maintained high code quality and recruiter-readiness scoring {health.get('overall_score', 85)}/100 across documentation and architecture."
-    ]
 
-    try:
-        init_gemini()
-        model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-        model = genai.GenerativeModel(model_name)
-
-        prompt = f"""
+    prompt = f"""
 You are an expert technical career coach. Create 3 to 5 high-impact resume bullet points for a software engineering candidate based on their GitHub repository:
 - Project Name: {meta.get('name', 'Project')}
 - Description: {meta.get('description', '')}
@@ -326,115 +258,36 @@ Format each bullet point following Google's XYZ formula:
 'Accomplished [X] as measured by [Y], by doing [Z]'
 Use active technical verbs (Architected, Engineered, Implemented, Spearheaded, Optimized).
 
-Return strictly a JSON array of strings:
-["Architected ...", "Engineered ...", "Implemented ..."]
+Return strictly a JSON array of strings.
 """
 
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                temperature=0.2
-            )
+    try:
+        data, _provider = llm_service.complete_json(
+            prompt, temperature=0.2, unwrap_keys=["bullets"]
         )
-
-        data = json.loads(response.text)
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict) and "bullets" in data:
-            return data["bullets"]
+        if isinstance(data, list) and data:
+            return [str(b) for b in data], False
+        if isinstance(data, dict) and isinstance(data.get("bullets"), list) and data["bullets"]:
+            return [str(b) for b in data["bullets"]], False
+        raise ValueError("pitch response was not a list of bullets")
     except Exception as e:
-        print(f"Notice: using default recruiter pitch due to: {e}")
+        print(f"[Pitch] deterministic fallback engaged: {e}")
+        return offline_heuristics.pitch_bullets(meta, health), True
 
-    return default_bullets
-
-def generate_interview_prep(meta: Dict[str, Any], health: Dict[str, Any], file_sample: List[str] = []) -> Dict[str, Any]:
+def generate_interview_prep(
+    meta: Dict[str, Any], health: Dict[str, Any], file_sample: List[str] = []
+) -> Tuple[Dict[str, Any], bool]:
     """
-    Generates an interview preparation kit for the repository:
-    1. How to explain the project in an interview (60-sec pitch, 2-min architecture, challenges).
-    2. Comprehensive breakdown of key features and their technical implementations.
-    3. Realistic technical interview questions, what interviewers test, and model talking points.
+    Interview kit for the indexed repository.
+
+    Returns (prep, offline_mode) so the caller can label deterministic output.
     """
     repo_name = meta.get("name", "Project")
     desc = meta.get("description") or "Full-stack application"
     tech_stack = health.get("tech_stack", ["React", "Node.js", "Python", "MongoDB"])
     stack_str = ", ".join(tech_stack)
 
-    # High-quality fallback if Gemini is slow or offline
-    default_prep = {
-        "explanation_guide": {
-            "elevator_pitch_60s": f"I built {repo_name}, a full-stack platform designed to solve career and developer intelligence challenges. It is engineered with a modular React frontend, a resilient backend utilizing {stack_str}, and integrates intelligent automated data pipelines to provide real-time user insights.",
-            "architecture_walkthrough": f"The system follows a clean multi-tier architecture: 1) Client Layer built with React and modern UI state management, 2) API Gateway and Backend Services handling authentication, data validation, and routing, 3) AI & Computational Microservice processing heavy vector tasks, and 4) Database Layer for schema persistence and cache.",
-            "challenges_and_tradeoffs": f"One key technical challenge was balancing API latency with deep computational processing. I decoupled time-intensive operations from the primary user thread by introducing asynchronous microservice communication and in-memory caching, reducing overall roundtrip latency.",
-            "key_learnings": f"Building {repo_name} deepened my understanding of end-to-end full-stack separation of concerns, secure inter-service communication, and writing modular, testable components."
-        },
-        "features": [
-            {
-                "name": "Modular Client-Server Architecture",
-                "category": "Architecture",
-                "description": "Decoupled frontend and backend allowing independent scaling and streamlined deployments.",
-                "technical_highlight": f"Utilizes RESTful endpoints with structured validation and environment-configured service proxies."
-            },
-            {
-                "name": "Real-Time Data Processing",
-                "category": "Core Engine",
-                "description": "Ingests, transforms, and surfaces data with high fidelity and responsive UI feedback.",
-                "technical_highlight": "Leverages asynchronous request handling, chunked stream parsing, and error-resilient fallbacks."
-            },
-            {
-                "name": "Interactive Analytical Dashboard",
-                "category": "UI / UX",
-                "description": "Visualizes complex metrics, automated health scores, and dynamic recommendation streams.",
-                "technical_highlight": "Custom SVG data-driven rings, glassmorphic card containers, and optimistic UI transitions."
-            },
-            {
-                "name": "Inter-Service Authentication & Security",
-                "category": "Security",
-                "description": "Protects internal microservices from unauthorized external invocation.",
-                "technical_highlight": "Internal security headers and tokenized request interceptors."
-            }
-        ],
-        "interview_questions": [
-            {
-                "question": f"Can you walk me through the high-level architecture of {repo_name} and why you chose this stack?",
-                "category": "Architecture & Design",
-                "why_asked": "Tests ability to communicate system boundaries, component responsibilities, and architectural rationale.",
-                "model_answer": f"I chose {stack_str} to separate high-concurrency request routing from intensive computational workloads. The frontend provides instant user feedback, while dedicated services handle business logic and database persistence.",
-                "key_talking_points": ["Separation of concerns", "Independent scaling of services", "Maintainable modularity"],
-                "codebase_reference": "Main service entry points and API controllers"
-            },
-            {
-                "question": "How do you manage state and handle API errors or network timeouts in the frontend?",
-                "category": "Frontend & Reliability",
-                "why_asked": "Evaluates defensive programming practices and user experience handling under failure conditions.",
-                "model_answer": "I implement centralized try/catch blocks with contextual user notifications and fallback states. If a background service times out, defensive defaults ensure the UI remains fully responsive without crashing.",
-                "key_talking_points": ["Graceful degradation", "Optimistic UI", "Error boundaries"],
-                "codebase_reference": "frontend/src/pages and service hooks"
-            },
-            {
-                "question": "If traffic to this application increased by 50x tomorrow, what would be your first bottleneck and how would you scale it?",
-                "category": "Scalability & System Design",
-                "why_asked": "Assesses understanding of bottlenecks, caching strategies, and horizontal scaling.",
-                "model_answer": "The initial bottleneck would likely be repeated computational requests. I would introduce a Redis cache layer for computed results, add horizontal container replicas behind a load balancer (NGINX), and put heavy processing into a background task queue (Celery/BullMQ).",
-                "key_talking_points": ["Redis caching layer", "Stateless microservice replication", "Asynchronous task queue"],
-                "codebase_reference": "Backend routing and AI service endpoints"
-            },
-            {
-                "question": "How did you ensure security and prevent unauthorized access across your APIs?",
-                "category": "Security",
-                "why_asked": "Validates candidate's security mindset regarding CORS, input sanitization, and service authorization.",
-                "model_answer": "I enforced CORS origin whitelisting, centralized input validation, and required inter-service secret keys for private microservice communication to prevent direct public probing.",
-                "key_talking_points": ["Input validation", "CORS policy", "Internal service secrets"],
-                "codebase_reference": "backend/src/server.js and middleware"
-            }
-        ]
-    }
-
     try:
-        init_gemini()
-        model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-        model = genai.GenerativeModel(model_name)
-
         prompt = f"""
 You are a Staff Software Engineer and Technical Hiring Manager.
 Analyze this GitHub project and generate an Interview Preparation Kit for the candidate:
@@ -478,29 +331,18 @@ Ensure all advice is grounded specifically in {repo_name}'s tech stack ({stack_s
 Return strictly raw JSON without markdown formatting.
 """
 
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                temperature=0.3
-            )
-        )
-
-        text = response.text.strip()
-        data = json.loads(text)
+        data, _provider = llm_service.complete_json(prompt, temperature=0.3)
         if isinstance(data, dict) and "explanation_guide" in data and "features" in data and "interview_questions" in data:
-            return data
+            return data, False
     except Exception as e:
-        print(f"Notice: using default interview prep due to: {e}")
+        print(f"[Interview Prep] deterministic fallback engaged: {e}")
 
-    return default_prep
+    return offline_heuristics.interview_prep(meta, health, file_sample), True
 
-def generate_profile_readme(username: str, repos: List[Dict[str, Any]], top_skills: List[str], bio: str = "") -> str:
-    """Generates a complete production-grade GitHub Profile README.md."""
-    init_gemini()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    model = genai.GenerativeModel(model_name)
-
+def generate_profile_readme(
+    username: str, repos: List[Dict[str, Any]], top_skills: List[str], bio: str = ""
+) -> Tuple[str, bool]:
+    """Generates a GitHub Profile README.md. Returns (markdown, offline_mode)."""
     repo_names = [r.get("name", "") for r in repos[:6] if r.get("name")]
     skills_str = ", ".join(top_skills) if top_skills else "JavaScript, React, Python, Node.js, MongoDB, Git"
 
@@ -525,38 +367,35 @@ Return ONLY raw GitHub markdown without surrounding json or backticks.
 """
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if text.startswith("```markdown"):
-            text = text[11:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        return text.strip()
+        text, _provider = llm_service.complete(prompt, temperature=0.6)
+        return text, False
     except Exception as e:
-        print(f"Profile readme generation error: {e}")
-        return f"""# Hi there, I'm {username} 👋
+        print(f"[Profile Readme] deterministic fallback engaged: {e}")
 
-🚀 **Software Developer** passionate about crafting scalable full-stack applications and AI systems.
+    # Built from the repos and skills we actually resolved, not a hardcoded list.
+    featured = "\n".join(
+        f"- [{name}](https://github.com/{username}/{name})" for name in repo_names[:6]
+    ) or "- No public repositories indexed yet."
+
+    return f"""# Hi there, I'm {username} 👋
+
+{bio or 'Software Developer building reliable, well-tested applications.'}
 
 ### 🛠️ Tech Stack
-`{skills_str}`
+{skills_str}
 
 ### 📌 Featured Repositories
-- [{repo_names[0] if repo_names else 'Project'}](https://github.com/{username}/{repo_names[0] if repo_names else ''})
-- [{repo_names[1] if len(repo_names) > 1 else 'Project-2'}](https://github.com/{username}/{repo_names[1] if len(repo_names) > 1 else ''})
+{featured}
 
 ### 📊 GitHub Stats
 ![Stats](https://github-readme-stats.vercel.app/api?username={username}&show_icons=true&theme=radical)
-"""
+![Top Langs](https://github-readme-stats.vercel.app/api/top-langs/?username={username}&layout=compact&theme=radical)
+""", True
 
-def generate_project_readme(repo_name: str, description: str, tech_stack: List[str], health: Dict[str, Any]) -> str:
-    """Generates a comprehensive production-grade README.md for a project."""
-    init_gemini()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    model = genai.GenerativeModel(model_name)
-
+def generate_project_readme(
+    repo_name: str, description: str, tech_stack: List[str], health: Dict[str, Any]
+) -> Tuple[str, bool]:
+    """Generates a README.md for a project. Returns (markdown, offline_mode)."""
     stack_str = ", ".join(tech_stack) if tech_stack else "React, Node.js, Python, FastAPI"
 
     prompt = f"""
@@ -581,25 +420,22 @@ Return ONLY raw Markdown without surrounding json or outer backticks.
 """
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if text.startswith("```markdown"):
-            text = text[11:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        return text.strip()
+        text, _provider = llm_service.complete(prompt, temperature=0.6)
+        return text, False
     except Exception as e:
-        print(f"Project readme notice: {e}")
-        return f"""# {repo_name}
+        print(f"[Project Readme] deterministic fallback engaged: {e}")
 
-> {description}
+    # Feature bullets come from measured code-health strengths, not boilerplate.
+    features = "\n".join(
+        f"- {s}" for s in (health.get("strengths") or [])[:4]
+    ) or "- Modular architecture with validated inputs and explicit failure paths"
+
+    return f"""# {repo_name}
+
+> {description or 'A project by ' + str(repo_name)}
 
 ## 🚀 Features
-- Modular full-stack architecture
-- Modern API endpoints
-- High reliability and code quality
+{features}
 
 ## 🛠️ Tech Stack
 {stack_str}
@@ -611,4 +447,4 @@ cd {repo_name}
 npm install
 npm run dev
 ```
-"""
+""", True

@@ -10,6 +10,7 @@ from app.services.github_service import (
     fetch_repository_data,
     chunk_codebase_files,
 )
+from app.services import llm_service
 from app.services.rag_service import (
     index_repository_chunks,
     answer_codebase_question,
@@ -46,7 +47,7 @@ def process_repo_indexing(job_id: str, repo_url: str):
         index_repository_chunks(full_name, chunks)
         INDEX_JOBS[job_id]["progress"] = 90
 
-        pitch_bullets = generate_recruiter_pitch(meta, health)
+        pitch_bullets, pitch_offline = generate_recruiter_pitch(meta, health)
 
         result_payload = {
             "status": "success",
@@ -57,6 +58,7 @@ def process_repo_indexing(job_id: str, repo_url: str):
             "files_sample": repo_data["all_files"][:30],
             "recruiter_pitch": pitch_bullets,
             "indexed_chunks_count": len(chunks),
+            "offline_mode": pitch_offline,
         }
 
         REPO_CACHE[full_name] = {
@@ -134,7 +136,7 @@ async def analyze_repository(
         index_repository_chunks(full_name, chunks)
 
         # 4. Generate recruiter pitch
-        pitch_bullets = generate_recruiter_pitch(meta, health)
+        pitch_bullets, pitch_offline = generate_recruiter_pitch(meta, health)
 
         # 5. Cache metadata in memory
         REPO_CACHE[full_name] = {
@@ -143,6 +145,7 @@ async def analyze_repository(
             "total_files_count": repo_data["total_files_count"],
             "all_files": repo_data["all_files"][:50],
             "recruiter_pitch": pitch_bullets,
+            "recruiter_pitch_offline": pitch_offline,
         }
 
         return {
@@ -154,6 +157,7 @@ async def analyze_repository(
             "files_sample": repo_data["all_files"][:30],
             "recruiter_pitch": pitch_bullets,
             "indexed_chunks_count": len(chunks),
+            "offline_mode": pitch_offline,
         }
 
     except ValueError as ve:
@@ -275,12 +279,16 @@ async def chat_with_codebase(
             "status": "success",
             "repo_id": full_name,
             "answer": rag_response["answer"],
-            "citations": rag_response["citations"]
+            "citations": rag_response["citations"],
+            "model_used": rag_response.get("model_used"),
+            "offline_mode": rag_response.get("offline_mode", False)
         }
 
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
+        # Repository ingestion failures are real errors; provider outages are not,
+        # and they are already handled inside answer_codebase_question.
         print(f"Error querying codebase: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to answer codebase query: {str(e)}")
 
@@ -303,12 +311,13 @@ async def get_recruiter_pitch(
             }
 
         cached = REPO_CACHE[full_name]
-        bullets = generate_recruiter_pitch(cached["metadata"], cached["health"])
+        bullets, offline = generate_recruiter_pitch(cached["metadata"], cached["health"])
 
         return {
             "status": "success",
             "repo_id": full_name,
-            "recruiter_pitch": bullets
+            "recruiter_pitch": bullets,
+            "offline_mode": offline
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -324,27 +333,34 @@ async def get_interview_prep_endpoint(
         owner, repo_name = parse_repo_identifier(payload.repo_url)
         full_name = f"{owner}/{repo_name}".lower()
 
-        if full_name not in REPO_CACHE or "interview_prep" not in REPO_CACHE[full_name]:
+        cached_entry = REPO_CACHE.get(full_name) or {}
+        # Regenerate when the cached kit was synthesised offline but a provider is
+        # reachable again, otherwise the user is stuck with fallback output.
+        cached_offline = cached_entry.get("interview_prep_offline", False)
+        if cached_entry.get("interview_prep") is None or (cached_offline and not llm_service.offline_mode()):
             repo_data = fetch_repository_data(payload.repo_url)
-            prep = generate_interview_prep(
+            prep, offline = generate_interview_prep(
                 repo_data["metadata"],
                 repo_data["health"],
                 repo_data.get("all_files", [])
             )
-            if full_name not in REPO_CACHE:
-                REPO_CACHE[full_name] = {
-                    "metadata": repo_data["metadata"],
-                    "health": repo_data["health"],
-                    "all_files": repo_data.get("all_files", [])[:50]
-                }
-            REPO_CACHE[full_name]["interview_prep"] = prep
+            REPO_CACHE[full_name] = {
+                **(REPO_CACHE.get(full_name) or {}),
+                "metadata": repo_data["metadata"],
+                "health": repo_data["health"],
+                "all_files": repo_data.get("all_files", [])[:50],
+                "interview_prep": prep,
+                "interview_prep_offline": offline,
+            }
         else:
-            prep = REPO_CACHE[full_name]["interview_prep"]
+            prep = cached_entry["interview_prep"]
+            offline = cached_offline
 
         return {
             "status": "success",
             "repo_id": full_name,
-            "interview_prep": prep
+            "interview_prep": prep,
+            "offline_mode": offline
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -366,13 +382,13 @@ async def create_profile_readme(
     verify_internal_auth(x_internal_key)
     try:
         from app.services.rag_service import generate_profile_readme
-        markdown = generate_profile_readme(
+        markdown, offline = generate_profile_readme(
             username=payload.username,
             repos=payload.repos,
             top_skills=payload.top_skills,
             bio=payload.bio or ""
         )
-        return {"status": "success", "markdown": markdown}
+        return {"status": "success", "markdown": markdown, "offline_mode": offline}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -395,12 +411,12 @@ async def create_project_readme(
 
         cached = REPO_CACHE[full_name]
         from app.services.rag_service import generate_project_readme
-        markdown = generate_project_readme(
+        markdown, offline = generate_project_readme(
             repo_name=cached["metadata"].get("name", repo_name),
             description=cached["metadata"].get("description", ""),
             tech_stack=cached["health"].get("tech_stack", []),
             health=cached["health"]
         )
-        return {"status": "success", "markdown": markdown}
+        return {"status": "success", "markdown": markdown, "offline_mode": offline}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

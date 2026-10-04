@@ -9,6 +9,7 @@ import {
   Trash2, Info
 } from 'lucide-react';
 import api, { fetchProfileFromDB, updateProfileInDB } from '../services/api';
+import { useOfflineMode, OfflineModeBadge } from '../hooks/useOfflineMode';
 
 // ---------- Circular Animated Health Score Ring ----------
 function ScoreRing({ score, label, sublabel, size = 110, strokeWidth = 8, colorOverride = null }) {
@@ -174,6 +175,7 @@ export default function CodebaseIntelligence() {
   const [analysisData, setAnalysisData] = useState(null);
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'health' | 'pitch' | 'readme'
   const [error, setError] = useState(null);
+  const { report: reportOffline } = useOfflineMode();
 
   // README Studio state
   const [projectReadmeMarkdown, setProjectReadmeMarkdown] = useState('');
@@ -285,6 +287,7 @@ export default function CodebaseIntelligence() {
         repo_url: repoTarget
       });
       setProjectReadmeMarkdown(res.data.markdown);
+      reportOffline(Boolean(res.data.offline_mode));
     } catch (err) {
       console.error("Error generating project readme:", err);
       setError("Failed to generate project README. Ensure repository is public.");
@@ -308,6 +311,7 @@ export default function CodebaseIntelligence() {
         bio: syncedProfile?.bio || 'Full-Stack Developer building intelligent tools'
       });
       setProfileReadmeMarkdown(res.data.markdown);
+      reportOffline(Boolean(res.data.offline_mode));
     } catch (err) {
       console.error("Error generating profile readme:", err);
       setError("Failed to generate profile README.");
@@ -401,6 +405,7 @@ export default function CodebaseIntelligence() {
       setAnalysisData(data);
       setRepoInput(targetUrl);
       setIndexingProgress(100);
+      reportOffline(Boolean(data.offline_mode));
 
       // Initialize chat with warm introductory greeting
       setMessages([
@@ -510,6 +515,7 @@ export default function CodebaseIntelligence() {
       });
 
       const aiResponse = res.data.data;
+      reportOffline(Boolean(aiResponse.offline_mode));
       setMessages(prev => [
         ...prev,
         {
@@ -559,8 +565,11 @@ export default function CodebaseIntelligence() {
         
         {/* Module Header Title & Value Prop */}
         <div className="text-center max-w-3xl mx-auto mb-8">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-primary-subtle text-primary border border-primary/20 mb-3 shadow-2xs">
-            <Sparkles className="h-3.5 w-3.5 text-primary" /> Vector Codebase Intelligence & RAG
+          <div className="flex items-center justify-center gap-2 mb-3">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-primary-subtle text-primary border border-primary/20 shadow-2xs">
+              <Sparkles className="h-3.5 w-3.5 text-primary" /> Vector Codebase Intelligence & RAG
+            </div>
+            <OfflineModeBadge />
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-primary tracking-tight">
             Codebase & GitHub Intelligence
