@@ -173,6 +173,16 @@ export const fetchDiagnostics = async () => {
   return res.data;
 };
 
+// ---------- GitHub Telemetry & Webhook Sync APIs ----------
+export const fetchGitHubSyncStatus = async () => {
+  try {
+    const res = await api.get('/github/sync-status');
+    return res.data?.data || null;
+  } catch (err) {
+    return null;
+  }
+};
+
 export { API_BASE, api };
 export default api;
 

@@ -22,6 +22,10 @@ const profileSchema = new mongoose.Schema(
     project_tech: { type: String, default: '' },
     project_description: { type: String, default: '' },
     project_url: { type: String, default: '' },
+    last_commit_hash: { type: String, default: '' },
+    last_commit_message: { type: String, default: '' },
+    last_synced_repo: { type: String, default: '' },
+    last_synced_at: { type: Date, default: null },
   },
   {
     timestamps: true,
