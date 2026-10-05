@@ -10,6 +10,7 @@ from app.services.github_service import (
     fetch_repository_data,
     chunk_codebase_files,
 )
+from app.services.dependency_graph import build_dependency_graph
 from app.services.rag_service import (
     index_repository_chunks,
     answer_codebase_question,
@@ -43,7 +44,8 @@ def process_repo_indexing(job_id: str, repo_url: str):
         file_contents = repo_data["file_contents"]
 
         chunks = chunk_codebase_files(file_contents)
-        index_repository_chunks(full_name, chunks)
+        dep_graph = build_dependency_graph(file_contents)
+        index_repository_chunks(full_name, chunks, dependency_graph=dep_graph)
         INDEX_JOBS[job_id]["progress"] = 90
 
         pitch_bullets = generate_recruiter_pitch(meta, health)
@@ -57,6 +59,11 @@ def process_repo_indexing(job_id: str, repo_url: str):
             "files_sample": repo_data["all_files"][:30],
             "recruiter_pitch": pitch_bullets,
             "indexed_chunks_count": len(chunks),
+            "dependency_graph": {
+                "total_nodes": dep_graph["total_nodes"],
+                "total_edges": dep_graph["total_edges"],
+                "chains_count": len(dep_graph["flow_chains"]),
+            },
         }
 
         REPO_CACHE[full_name] = {
@@ -129,9 +136,10 @@ async def analyze_repository(
         health = repo_data["health"]
         file_contents = repo_data["file_contents"]
 
-        # 3. Chunk files for RAG vector search
+        # 3. Chunk files for RAG vector search & build AST dependency graph
         chunks = chunk_codebase_files(file_contents)
-        index_repository_chunks(full_name, chunks)
+        dep_graph = build_dependency_graph(file_contents)
+        index_repository_chunks(full_name, chunks, dependency_graph=dep_graph)
 
         # 4. Generate recruiter pitch
         pitch_bullets = generate_recruiter_pitch(meta, health)
@@ -154,6 +162,11 @@ async def analyze_repository(
             "files_sample": repo_data["all_files"][:30],
             "recruiter_pitch": pitch_bullets,
             "indexed_chunks_count": len(chunks),
+            "dependency_graph": {
+                "total_nodes": dep_graph["total_nodes"],
+                "total_edges": dep_graph["total_edges"],
+                "chains_count": len(dep_graph["flow_chains"]),
+            },
         }
 
     except ValueError as ve:
