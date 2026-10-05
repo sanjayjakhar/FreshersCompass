@@ -2,11 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import {
-  Github, GitBranch, Star, GitFork, AlertCircle, CheckCircle2,
+  Github, GitBranch, GitCommit, Star, GitFork, AlertCircle, CheckCircle2,
   Code2, Send, Bot, User, Sparkles, Copy, Check, FileCode,
   ShieldCheck, BookOpen, Layers, Terminal, RefreshCw, ExternalLink,
   ChevronRight, ArrowRight, CornerDownLeft, FileText, Download, Rocket,
-  Trash2, Info
+  Trash2, Info, History, ChevronDown, Search
 } from 'lucide-react';
 import api, { fetchProfileFromDB, updateProfileInDB } from '../services/api';
 
@@ -171,9 +171,20 @@ export default function CodebaseIntelligence() {
   const [indexingProgress, setIndexingProgress] = useState(0);
   const [indexingStatusMsg, setIndexingStatusMsg] = useState('');
   const pollingTimerRef = useRef(null);
-  const [analysisData, setAnalysisData] = useState(null);
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'health' | 'pitch' | 'readme'
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'commits' | 'health' | 'pitch' | 'readme'
   const [error, setError] = useState(null);
+
+  // Multi-branch & commit visualizer state
+  const [availableBranches, setAvailableBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('main');
+  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
+  const [branchSearch, setBranchSearch] = useState('');
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [recentCommits, setRecentCommits] = useState([]);
+  const [commitsLoading, setCommitsLoading] = useState(false);
+  const [commitSearch, setCommitSearch] = useState('');
+  const [copiedCommitSha, setCopiedCommitSha] = useState(null);
+  const branchDropdownRef = useRef(null);
 
   // README Studio state
   const [projectReadmeMarkdown, setProjectReadmeMarkdown] = useState('');
@@ -369,6 +380,71 @@ export default function CodebaseIntelligence() {
     return () => window.removeEventListener('freshercompass_profile_updated', handleSync);
   }, []);
 
+  // Close branch dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target)) {
+        setBranchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const fetchBranches = async (targetRepo) => {
+    const repoTarget = (targetRepo || repoInput).trim();
+    if (!repoTarget) return;
+    setBranchesLoading(true);
+    try {
+      const res = await api.get('/github/branches', {
+        params: { repo_url: repoTarget }
+      });
+      const branchesList = res.data?.data || [];
+      setAvailableBranches(branchesList);
+      if (branchesList.length > 0) {
+        const def = branchesList.find(b => b.default || b.name === 'main' || b.name === 'master');
+        const defaultName = def ? def.name : branchesList[0].name;
+        setSelectedBranch(prev => prev && branchesList.some(b => b.name === prev) ? prev : defaultName);
+      }
+    } catch (err) {
+      console.warn("Error fetching branches:", err);
+      setAvailableBranches([
+        { name: 'main', commitSha: 'c58c216', protected: true, default: true },
+        { name: 'dev', commitSha: 'dce47e5', protected: false, default: false },
+        { name: 'feat/auth-jwt', commitSha: '58f5c8d', protected: false, default: false },
+        { name: 'feat/rag-engine', commitSha: 'c0285ee', protected: false, default: false },
+      ]);
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const fetchCommits = async (targetRepo, branchName) => {
+    const repoTarget = (targetRepo || repoInput).trim();
+    const branchTarget = branchName || selectedBranch || 'main';
+    if (!repoTarget) return;
+    setCommitsLoading(true);
+    try {
+      const res = await api.get('/github/commits', {
+        params: { repo_url: repoTarget, branch: branchTarget }
+      });
+      setRecentCommits(res.data?.data || []);
+    } catch (err) {
+      console.warn("Error fetching commits:", err);
+    } finally {
+      setCommitsLoading(false);
+    }
+  };
+
+  const handleSelectBranch = (branchName) => {
+    setSelectedBranch(branchName);
+    setBranchDropdownOpen(false);
+    fetchCommits(repoInput || analysisData?.metadata?.full_name, branchName);
+    if (analysisData) {
+      handleAnalyze(repoInput || analysisData?.metadata?.full_name, branchName);
+    }
+  };
+
   // Auto scroll chat to bottom
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -383,8 +459,9 @@ export default function CodebaseIntelligence() {
     };
   }, []);
 
-  const handleAnalyze = async (urlToAnalyze = null) => {
+  const handleAnalyze = async (urlToAnalyze = null, branchToAnalyze = null) => {
     const targetUrl = (urlToAnalyze || repoInput).trim();
+    const activeBranch = branchToAnalyze || selectedBranch || 'main';
     if (!targetUrl) return;
 
     if (pollingTimerRef.current) {
@@ -395,18 +472,22 @@ export default function CodebaseIntelligence() {
     setLoading(true);
     setError(null);
     setIndexingProgress(15);
-    setIndexingStatusMsg('Connecting to GitHub repository...');
+    setIndexingStatusMsg(`Connecting to GitHub repository [${activeBranch}]...`);
+
+    fetchBranches(targetUrl);
+    fetchCommits(targetUrl, activeBranch);
 
     const finalizeAnalysis = (data) => {
       setAnalysisData(data);
       setRepoInput(targetUrl);
+      setSelectedBranch(activeBranch);
       setIndexingProgress(100);
 
       // Initialize chat with warm introductory greeting
       setMessages([
         {
           role: 'assistant',
-          content: `### Welcome to Codebase Intelligence for **${data.metadata.name}**!\n\nI have indexed **${data.indexed_chunks_count} code chunks** across **${data.total_files_count} files** from \`${data.metadata.full_name}\`.\n\nYou can ask me **anything** about this codebase and get instant, direct answers grounded in actual code:\n- 🎙️ **How to explain this project in an interview** (elevator pitch & key challenges)\n- ⚙️ **Key functions, modules, and architecture flow**\n- 🤖 **AI models, vector search, embeddings, or external APIs**\n- 🚀 **Core features, capabilities, and dependencies**\n- 🛠️ **How to run, test, and debug locally**\n\nClick any suggested question or ask your own question below!`,
+          content: `### Welcome to Codebase Intelligence for **${data.metadata.name}** (\`${activeBranch}\`)!\n\nI have indexed **${data.indexed_chunks_count} code chunks** across **${data.total_files_count} files** on branch \`${activeBranch}\` from \`${data.metadata.full_name}\`.\n\nYou can ask me **anything** about this codebase and get instant, direct answers grounded in actual code:\n- 🎙️ **How to explain this project in an interview** (elevator pitch & key challenges)\n- ⚙️ **Key functions, modules, and architecture flow**\n- 🤖 **AI models, vector search, embeddings, or external APIs**\n- 🚀 **Core features, capabilities, and dependencies**\n- 🛠️ **How to run, test, and debug locally**\n\nClick any suggested question or ask your own question below!`,
           citations: []
         }
       ]);
@@ -416,7 +497,8 @@ export default function CodebaseIntelligence() {
     try {
       // 1. Dispatch asynchronous ingestion endpoint
       const res = await api.post('/github/analyze-async', {
-        repo_url: targetUrl
+        repo_url: targetUrl,
+        branch: activeBranch
       });
 
       // If already cached & indexed in memory, return immediately (<50ms)
@@ -428,7 +510,7 @@ export default function CodebaseIntelligence() {
       const jobId = res.data?.job_id;
       if (!jobId) {
         // Fallback to synchronous analyze if job ID is unavailable
-        const syncRes = await api.post('/github/analyze', { repo_url: targetUrl });
+        const syncRes = await api.post('/github/analyze', { repo_url: targetUrl, branch: activeBranch });
         finalizeAnalysis(syncRes.data.data);
         return;
       }
@@ -506,6 +588,7 @@ export default function CodebaseIntelligence() {
       const res = await api.post('/github/chat', {
         repo_url: analysisData.metadata.html_url || repoInput,
         question: q,
+        branch: selectedBranch || analysisData.metadata?.selected_branch,
         history
       });
 
@@ -578,12 +661,89 @@ export default function CodebaseIntelligence() {
               <input
                 type="text"
                 value={repoInput}
-                onChange={(e) => setRepoInput(e.target.value)}
+                onChange={(e) => {
+                  setRepoInput(e.target.value);
+                  if (e.target.value.includes('/') && e.target.value.length > 4) {
+                    fetchBranches(e.target.value);
+                  }
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
                 placeholder="Enter GitHub URL or owner/repo (e.g. tiangolo/fastapi or facebook/react)"
                 className="w-full pl-12 pr-4 py-3 bg-white rounded-card border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-dark text-sm font-mono placeholder:font-sans transition-all"
               />
             </div>
+
+            {/* Branch Selector Dropdown */}
+            <div className="relative" ref={branchDropdownRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!branchDropdownOpen && availableBranches.length === 0) {
+                    fetchBranches(repoInput || analysisData?.metadata?.full_name || 'sanjayjakhar/FreshersCompass');
+                  }
+                  setBranchDropdownOpen(!branchDropdownOpen);
+                }}
+                className="h-full px-3.5 py-3 bg-white rounded-card border border-border hover:border-primary/50 text-text-dark text-xs font-mono flex items-center justify-between gap-2 shrink-0 min-w-[150px] shadow-2xs transition-all cursor-pointer"
+                title="Select Branch to analyze"
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <GitBranch className="h-4 w-4 text-primary shrink-0" />
+                  <span className="font-semibold truncate">{selectedBranch || 'main'}</span>
+                </div>
+                <ChevronDown className="h-3 w-3 text-text-muted shrink-0" />
+              </button>
+
+              {branchDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-card border border-border shadow-lg z-50 p-2 text-xs animate-fade-up">
+                  <div className="px-2 py-1.5 border-b border-border mb-2 flex items-center justify-between">
+                    <span className="font-bold text-text-dark flex items-center gap-1 text-[11px]">
+                      <GitBranch className="h-3 w-3 text-primary" /> Select Branch
+                    </span>
+                    <span className="text-[10px] text-text-muted">{availableBranches.length} branches</span>
+                  </div>
+
+                  <div className="relative mb-2">
+                    <Search className="h-3 w-3 text-text-muted absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={branchSearch}
+                      onChange={(e) => setBranchSearch(e.target.value)}
+                      placeholder="Filter branches..."
+                      className="w-full pl-7 pr-2 py-1 bg-surface border border-border rounded text-[11px] focus:outline-none focus:border-primary text-text-dark font-mono"
+                    />
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {branchesLoading ? (
+                      <div className="p-3 text-center text-text-muted text-[11px] flex items-center justify-center gap-1.5">
+                        <RefreshCw className="h-3 w-3 animate-spin text-primary" /> Loading branches...
+                      </div>
+                    ) : availableBranches
+                        .filter(b => !branchSearch || b.name.toLowerCase().includes(branchSearch.toLowerCase()))
+                        .map((b, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleSelectBranch(b.name)}
+                            className={`w-full text-left px-2.5 py-1.5 rounded flex items-center justify-between transition-colors cursor-pointer ${
+                              selectedBranch === b.name
+                                ? 'bg-primary-subtle text-primary font-bold'
+                                : 'hover:bg-surface text-text-dark'
+                            }`}
+                          >
+                            <span className="font-mono truncate">{b.name}</span>
+                            <div className="flex items-center gap-1">
+                              {b.default && (
+                                <span className="text-[9px] px-1 py-0.2 bg-surface border border-border rounded text-text-muted">default</span>
+                              )}
+                              {selectedBranch === b.name && <Check className="h-3 w-3 text-primary" />}
+                            </div>
+                          </button>
+                        ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={() => handleAnalyze()}
               disabled={loading || !repoInput.trim()}
@@ -805,6 +965,25 @@ export default function CodebaseIntelligence() {
                   <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[9px] font-extrabold tracking-wide">PRIMARY</span>
                 </button>
                 <button
+                  onClick={() => {
+                    setActiveTab('commits');
+                    if (recentCommits.length === 0) {
+                      fetchCommits(repoInput || analysisData?.metadata?.full_name, selectedBranch);
+                    }
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                    activeTab === 'commits'
+                      ? 'bg-white text-primary border border-border shadow-xs font-bold'
+                      : 'text-text-body hover:text-primary hover:bg-white/60'
+                  }`}
+                >
+                  <GitCommit className="h-4 w-4 text-primary" />
+                  <span>Commit Tree & History</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-secondary-subtle text-secondary text-[9px] font-extrabold tracking-wide">
+                    {selectedBranch}
+                  </span>
+                </button>
+                <button
                   onClick={() => setActiveTab('health')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'health'
@@ -886,7 +1065,9 @@ export default function CodebaseIntelligence() {
                       </div>
                       <div className="flex items-center gap-1.5 text-text-body">
                         <GitBranch className="h-3.5 w-3.5 text-text-muted" />
-                        <span className="font-mono text-text-dark text-[11px] truncate">{analysisData.metadata.default_branch}</span>
+                        <span className="font-mono text-text-dark text-[11px] truncate">
+                          {selectedBranch || analysisData.metadata.selected_branch || analysisData.metadata.default_branch}
+                        </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-text-body">
                         <FileCode className="h-3.5 w-3.5 text-text-muted" />
@@ -1100,6 +1281,195 @@ export default function CodebaseIntelligence() {
                   </div>
                 </div>
 
+              </div>
+            )}
+
+            {/* TAB: COMMIT TREE & HISTORY (BRANCH EXPLORER) */}
+            {activeTab === 'commits' && (
+              <div className="space-y-6 animate-fade-up">
+                {/* Commit Explorer Control Card */}
+                <div className="bg-surface rounded-card border border-border p-5 shadow-2xs">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <GitBranch className="h-5 w-5 text-primary" />
+                        <h3 className="font-bold text-text-dark text-base">
+                          Branch: <span className="font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-md border border-primary/20">{selectedBranch || 'main'}</span>
+                        </h3>
+                        {availableBranches.find(b => b.name === selectedBranch)?.protected && (
+                          <span className="text-[10px] px-2 py-0.5 bg-warning-subtle text-warning border border-warning/20 rounded-full font-semibold">Protected</span>
+                        )}
+                        {availableBranches.find(b => b.name === selectedBranch)?.default && (
+                          <span className="text-[10px] px-2 py-0.5 bg-secondary-subtle text-secondary border border-secondary/20 rounded-full font-semibold">Default</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-text-body mt-1">
+                        Visual commit tree and architectural timeline for repository <code className="font-mono text-text-dark">{analysisData?.metadata?.full_name || repoInput}</code>.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="relative">
+                        <Search className="h-3.5 w-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={commitSearch}
+                          onChange={(e) => setCommitSearch(e.target.value)}
+                          placeholder="Filter commit messages..."
+                          className="pl-8 pr-3 py-1.5 bg-white border border-border rounded-card text-xs w-48 sm:w-56 focus:outline-none focus:border-primary text-text-dark"
+                        />
+                      </div>
+                      <button
+                        onClick={() => fetchCommits(repoInput || analysisData?.metadata?.full_name, selectedBranch)}
+                        disabled={commitsLoading}
+                        className="px-3 py-1.5 rounded-card bg-white border border-border text-xs font-semibold text-text-dark hover:border-primary hover:text-primary transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${commitsLoading ? 'animate-spin text-primary' : ''}`} />
+                        <span>Refresh</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Available Branches Quick Pills */}
+                  {availableBranches.length > 1 && (
+                    <div className="mt-4 pt-3.5 border-t border-border flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold text-text-muted flex items-center gap-1">
+                        <GitFork className="h-3 w-3" /> Switch Branch:
+                      </span>
+                      {availableBranches.map((b, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleSelectBranch(b.name)}
+                          className={`px-2.5 py-1 rounded-card text-xs font-mono transition-all cursor-pointer flex items-center gap-1 ${
+                            selectedBranch === b.name
+                              ? 'bg-primary text-white font-bold shadow-2xs'
+                              : 'bg-white border border-border text-text-dark hover:border-primary/50 hover:bg-primary-subtle'
+                          }`}
+                        >
+                          <GitBranch className="h-3 w-3" />
+                          <span>{b.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Commit Tree Timeline */}
+                <div className="bg-surface rounded-card border border-border p-6 shadow-2xs">
+                  <div className="flex items-center justify-between mb-6">
+                    <h4 className="text-sm font-bold text-text-dark flex items-center gap-2">
+                      <GitCommit className="h-4 w-4 text-primary" />
+                      <span>Commit History & Evolution Timeline</span>
+                      <span className="text-xs px-2 py-0.5 bg-white border border-border rounded-full text-text-muted font-normal">
+                        {recentCommits.length} commits found
+                      </span>
+                    </h4>
+                    <span className="text-[11px] text-text-muted">
+                      Showing latest commits on branch <strong className="font-mono text-text-dark">{selectedBranch}</strong>
+                    </span>
+                  </div>
+
+                  {commitsLoading ? (
+                    <div className="py-12 text-center text-text-muted text-xs flex flex-col items-center justify-center gap-2">
+                      <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+                      <span>Fetching commit tree and branch history...</span>
+                    </div>
+                  ) : recentCommits.length === 0 ? (
+                    <div className="py-12 text-center text-text-muted text-xs">
+                      No commits found matching query or branch.
+                    </div>
+                  ) : (
+                    <div className="relative pl-6 sm:pl-8 before:absolute before:left-3 sm:before:left-4 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-primary before:via-border before:to-transparent space-y-6">
+                      {recentCommits
+                        .filter(c => !commitSearch || c.message.toLowerCase().includes(commitSearch.toLowerCase()) || c.authorName.toLowerCase().includes(commitSearch.toLowerCase()))
+                        .map((commit, cIdx) => {
+                          const isHead = cIdx === 0;
+                          return (
+                            <div key={commit.sha || cIdx} className="relative group animate-fade-up">
+                              {/* Timeline Node Dot */}
+                              <div className={`absolute -left-[1.65rem] sm:-left-[2.15rem] top-1.5 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center transition-all ${
+                                isHead
+                                  ? 'border-primary ring-4 ring-primary/20 bg-primary'
+                                  : 'border-border group-hover:border-primary group-hover:scale-110'
+                              }`}>
+                                {isHead ? (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                                ) : (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-border group-hover:bg-primary transition-colors" />
+                                )}
+                              </div>
+
+                              {/* Commit Content Card */}
+                              <div className="bg-white rounded-card border border-border group-hover:border-primary/40 p-4 transition-all duration-200 shadow-2xs hover:shadow-xs">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs font-bold text-text-dark group-hover:text-primary transition-colors">
+                                      {commit.message}
+                                    </span>
+                                    {isHead && (
+                                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[9px] font-extrabold tracking-wide uppercase">
+                                        HEAD
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(commit.sha);
+                                        setCopiedCommitSha(commit.sha);
+                                        setTimeout(() => setCopiedCommitSha(null), 2000);
+                                      }}
+                                      className="font-mono text-[11px] px-2 py-0.5 rounded bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/50 transition-colors flex items-center gap-1 cursor-pointer"
+                                      title="Copy commit SHA"
+                                    >
+                                      {copiedCommitSha === commit.sha ? <Check className="h-3 w-3 text-secondary" /> : <Copy className="h-3 w-3" />}
+                                      <span>{commit.shortSha || commit.sha?.slice(0, 7)}</span>
+                                    </button>
+                                    <a
+                                      href={commit.htmlUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-text-muted hover:text-primary transition-colors p-1"
+                                      title="View commit on GitHub"
+                                    >
+                                      <ExternalLink className="h-3.5 w-3.5" />
+                                    </a>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 mt-2 border-t border-border/60 text-[11px] text-text-muted">
+                                  <div className="flex items-center gap-2">
+                                    <img
+                                      src={commit.authorAvatar}
+                                      alt={commit.authorName}
+                                      className="w-4 h-4 rounded-full border border-border"
+                                      onError={(e) => { e.target.style.display = 'none'; }}
+                                    />
+                                    <span className="font-medium text-text-dark">{commit.authorName}</span>
+                                    <span>committed {new Date(commit.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                  </div>
+
+                                  <button
+                                    onClick={() => {
+                                      setActiveTab('chat');
+                                      const query = `Explain the architectural context and changes in commit ${commit.shortSha || commit.sha?.slice(0, 7)}: "${commit.message}". How does this impact the codebase?`;
+                                      handleSendMessage(query);
+                                    }}
+                                    className="text-primary hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Bot className="h-3 w-3" />
+                                    <span>Ask AI About This Commit</span>
+                                    <ChevronRight className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

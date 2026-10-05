@@ -26,7 +26,7 @@ REPO_CACHE: Dict[str, Dict[str, Any]] = {}
 # Background indexing jobs registry
 INDEX_JOBS: Dict[str, Dict[str, Any]] = {}
 
-def process_repo_indexing(job_id: str, repo_url: str):
+def process_repo_indexing(job_id: str, repo_url: str, branch: Optional[str] = None):
     """Background worker for repository AST chunking and vector indexing."""
     try:
         INDEX_JOBS[job_id]["status"] = "indexing"
@@ -34,8 +34,9 @@ def process_repo_indexing(job_id: str, repo_url: str):
 
         owner, repo_name = parse_repo_identifier(repo_url)
         full_name = f"{owner}/{repo_name}".lower()
+        cache_id = f"{full_name}@{branch}" if branch else full_name
 
-        repo_data = fetch_repository_data(repo_url)
+        repo_data = fetch_repository_data(repo_url, branch=branch)
         INDEX_JOBS[job_id]["progress"] = 65
 
         meta = repo_data["metadata"]
@@ -43,14 +44,14 @@ def process_repo_indexing(job_id: str, repo_url: str):
         file_contents = repo_data["file_contents"]
 
         chunks = chunk_codebase_files(file_contents)
-        index_repository_chunks(full_name, chunks)
+        index_repository_chunks(cache_id, chunks)
         INDEX_JOBS[job_id]["progress"] = 90
 
         pitch_bullets = generate_recruiter_pitch(meta, health)
 
         result_payload = {
             "status": "success",
-            "repo_id": full_name,
+            "repo_id": cache_id,
             "metadata": meta,
             "health": health,
             "total_files_count": repo_data["total_files_count"],
@@ -59,7 +60,7 @@ def process_repo_indexing(job_id: str, repo_url: str):
             "indexed_chunks_count": len(chunks),
         }
 
-        REPO_CACHE[full_name] = {
+        REPO_CACHE[cache_id] = {
             "metadata": meta,
             "health": health,
             "total_files_count": repo_data["total_files_count"],
@@ -77,10 +78,12 @@ def process_repo_indexing(job_id: str, repo_url: str):
 
 class AnalyzeRepoRequest(BaseModel):
     repo_url: str
+    branch: Optional[str] = None
 
 class ChatQuestionRequest(BaseModel):
     repo_url: str
     question: str
+    branch: Optional[str] = None
     history: Optional[List[Dict[str, str]]] = []
 
 class RecruiterPitchRequest(BaseModel):
@@ -107,14 +110,15 @@ async def analyze_repository(
     try:
         owner, repo_name = parse_repo_identifier(payload.repo_url)
         full_name = f"{owner}/{repo_name}".lower()
+        cache_id = f"{full_name}@{payload.branch}" if payload.branch else full_name
 
         # 1. Return from cache immediately if already analyzed and indexed
-        if full_name in REPO_CACHE and full_name in REPO_VECTOR_STORE:
-            cached = REPO_CACHE[full_name]
-            chunks_count = len(REPO_VECTOR_STORE[full_name].get("chunks", []))
+        if cache_id in REPO_CACHE and cache_id in REPO_VECTOR_STORE:
+            cached = REPO_CACHE[cache_id]
+            chunks_count = len(REPO_VECTOR_STORE[cache_id].get("chunks", []))
             return {
                 "status": "success",
-                "repo_id": full_name,
+                "repo_id": cache_id,
                 "metadata": cached["metadata"],
                 "health": cached["health"],
                 "total_files_count": cached.get("total_files_count", 0),
@@ -124,20 +128,20 @@ async def analyze_repository(
             }
 
         # 2. Ingest repo data from GitHub
-        repo_data = fetch_repository_data(payload.repo_url)
+        repo_data = fetch_repository_data(payload.repo_url, branch=payload.branch)
         meta = repo_data["metadata"]
         health = repo_data["health"]
         file_contents = repo_data["file_contents"]
 
         # 3. Chunk files for RAG vector search
         chunks = chunk_codebase_files(file_contents)
-        index_repository_chunks(full_name, chunks)
+        index_repository_chunks(cache_id, chunks)
 
         # 4. Generate recruiter pitch
         pitch_bullets = generate_recruiter_pitch(meta, health)
 
         # 5. Cache metadata in memory
-        REPO_CACHE[full_name] = {
+        REPO_CACHE[cache_id] = {
             "metadata": meta,
             "health": health,
             "total_files_count": repo_data["total_files_count"],
@@ -147,7 +151,7 @@ async def analyze_repository(
 
         return {
             "status": "success",
-            "repo_id": full_name,
+            "repo_id": cache_id,
             "metadata": meta,
             "health": health,
             "total_files_count": repo_data["total_files_count"],
@@ -175,23 +179,24 @@ async def analyze_repository_async(
 
     owner, repo_name = parse_repo_identifier(payload.repo_url)
     full_name = f"{owner}/{repo_name}".lower()
+    cache_id = f"{full_name}@{payload.branch}" if payload.branch else full_name
 
     # Fast return if already cached and indexed
-    if full_name in REPO_CACHE and full_name in REPO_VECTOR_STORE:
-        cached = REPO_CACHE[full_name]
+    if cache_id in REPO_CACHE and cache_id in REPO_VECTOR_STORE:
+        cached = REPO_CACHE[cache_id]
         return {
             "status": "completed",
             "progress": 100,
-            "job_id": f"cached_{full_name.replace('/', '_')}",
+            "job_id": f"cached_{cache_id.replace('/', '_').replace('@', '_')}",
             "result": {
                 "status": "success",
-                "repo_id": full_name,
+                "repo_id": cache_id,
                 "metadata": cached["metadata"],
                 "health": cached["health"],
                 "total_files_count": cached.get("total_files_count", 0),
                 "files_sample": cached.get("all_files", [])[:30],
                 "recruiter_pitch": cached.get("recruiter_pitch", []),
-                "indexed_chunks_count": len(REPO_VECTOR_STORE[full_name].get("chunks", [])),
+                "indexed_chunks_count": len(REPO_VECTOR_STORE[cache_id].get("chunks", [])),
             }
         }
 
@@ -199,14 +204,16 @@ async def analyze_repository_async(
     INDEX_JOBS[job_id] = {
         "job_id": job_id,
         "repo_url": payload.repo_url,
+        "branch": payload.branch,
         "full_name": full_name,
+        "cache_id": cache_id,
         "status": "queued",
         "progress": 5,
         "error": None,
         "result": None,
     }
 
-    background_tasks.add_task(process_repo_indexing, job_id, payload.repo_url)
+    background_tasks.add_task(process_repo_indexing, job_id, payload.repo_url, payload.branch)
 
     return {
         "status": "queued",
@@ -249,23 +256,24 @@ async def chat_with_codebase(
     try:
         owner, repo_name = parse_repo_identifier(payload.repo_url)
         full_name = f"{owner}/{repo_name}".lower()
+        cache_id = f"{full_name}@{payload.branch}" if payload.branch and f"{full_name}@{payload.branch}" in REPO_CACHE else (f"{full_name}@{payload.branch}" if payload.branch else full_name)
 
         # Ensure repository is ingested and indexed
-        if full_name not in REPO_CACHE or full_name not in REPO_VECTOR_STORE:
-            repo_data = fetch_repository_data(payload.repo_url)
+        if cache_id not in REPO_CACHE or cache_id not in REPO_VECTOR_STORE:
+            repo_data = fetch_repository_data(payload.repo_url, branch=payload.branch)
             chunks = chunk_codebase_files(repo_data["file_contents"])
-            index_repository_chunks(full_name, chunks)
-            REPO_CACHE[full_name] = {
+            index_repository_chunks(cache_id, chunks)
+            REPO_CACHE[cache_id] = {
                 "metadata": repo_data["metadata"],
                 "health": repo_data["health"],
             }
 
-        cached = REPO_CACHE.get(full_name, {})
+        cached = REPO_CACHE.get(cache_id, {})
         meta = cached.get("metadata", {"full_name": full_name})
 
         # Answer with RAG + Gemini
         rag_response = answer_codebase_question(
-            repo_full_name=full_name,
+            repo_full_name=cache_id,
             question=payload.question,
             meta=meta,
             history=payload.history
@@ -273,7 +281,7 @@ async def chat_with_codebase(
 
         return {
             "status": "success",
-            "repo_id": full_name,
+            "repo_id": cache_id,
             "answer": rag_response["answer"],
             "citations": rag_response["citations"]
         }
