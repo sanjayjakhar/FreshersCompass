@@ -1,4 +1,5 @@
 import { fetchLiveJobs } from "../services/job.service.js";
+import { calculateJobMatch } from "../services/match.service.js";
 
 const filterJobs = (jobs, filters) => {
   const { grad_year, type, location, domain, search } = filters;
@@ -140,56 +141,24 @@ export const getLiveJobsList = async (req, res) => {
 
 export const getRecommendedJobs = async (req, res) => {
   try {
-    const { user_skills, grad_year, type, location, domain, search, profile_source } = req.body;
+    const { user_skills, grad_year, type, location, domain, search, profile_source, project_tech } = req.body;
     const skills = Array.isArray(user_skills) ? user_skills.filter(Boolean) : [];
     const allJobs = await fetchLiveJobs();
     const filteredJobs = filterJobs(allJobs, { grad_year, type, location, domain, search });
 
-    if (skills.length === 0) {
-      return res.status(200).json({
-        message: "Live jobs returned (no user skills provided)",
-        count: filteredJobs.length,
-        total_unfiltered: allJobs.length,
-        data: filteredJobs.map((j) => ({
-          ...j,
-          match_score: 70,
-          matched_skills: [],
-          missing_skills: (j.tags || []).slice(0, 3),
-          match_source: profile_source || "general",
-        })),
-      });
-    }
+    const candidate = {
+      skills,
+      project_tech: project_tech || "",
+    };
 
-    // Perform ultra-fast, intelligent in-process skill ranking (sub-millisecond execution)
-    const userSkillsClean = skills.map((s) => s.toLowerCase().trim());
     const rankedJobs = filteredJobs.map((j) => {
-      const jobText = `${j.title || ""} ${j.description || ""} ${(j.tags || []).join(" ")}`.toLowerCase();
-      const matched = [];
-      const missing = [];
-
-      userSkillsClean.forEach((sk, idx) => {
-        if (jobText.includes(sk)) {
-          matched.push(skills[idx]);
-        }
-      });
-
-      (j.tags || []).forEach((tag) => {
-        if (!userSkillsClean.includes(tag.toLowerCase())) {
-          missing.push(tag);
-        }
-      });
-
-      const totalSkills = matched.length + missing.slice(0, 3).length;
-      const score = totalSkills > 0
-        ? Math.min(96, Math.max(45, Math.round((matched.length / totalSkills) * 100)))
-        : 68;
-
+      const match = calculateJobMatch(candidate, j);
       return {
         ...j,
-        match_score: score,
-        matched_skills: matched.slice(0, 5),
-        missing_skills: missing.slice(0, 3),
-        match_source: profile_source || "intelligent_match",
+        match_score: match.matchScore,
+        matched_skills: match.matchedSkills,
+        missing_skills: match.missingSkills,
+        match_source: profile_source || "semantic_match",
       };
     });
 
@@ -207,5 +176,21 @@ export const getRecommendedJobs = async (req, res) => {
       message: "Failed to generate job recommendations",
       details: error.message,
     });
+  }
+};
+
+export const calculateMatchScore = async (req, res) => {
+  try {
+    const { job, candidate } = req.body;
+    if (!job) {
+      return res.status(400).json({ message: "Job object is required" });
+    }
+    const result = calculateJobMatch(candidate || {}, job);
+    return res.status(200).json({
+      message: "Match score calculated successfully",
+      data: result,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to calculate match score", details: error.message });
   }
 };

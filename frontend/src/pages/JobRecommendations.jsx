@@ -942,18 +942,20 @@ export default function JobRecommendations() {
                       {job.matched_skills && job.matched_skills.slice(0, 4).map((m, mIdx) => (
                         <span
                           key={mIdx}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white text-success text-[11px] font-bold border border-success/30 shadow-2xs"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200 shadow-2xs"
+                          title="Matched skill in candidate profile"
                         >
-                          <Check className="h-3 w-3 text-success" /> {m}
+                          <Check className="h-3 w-3 text-emerald-600" /> {m}
                         </span>
                       ))}
 
                       {job.missing_skills && job.missing_skills.slice(0, 3).map((ms, msIdx) => (
                         <span
                           key={msIdx}
-                          className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-xl bg-white text-text-muted text-[11px] font-medium border border-border"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-700 text-[11px] font-semibold border border-amber-200/80 shadow-2xs"
+                          title="Missing skill gap for this role"
                         >
-                          +{ms}
+                          <span className="text-amber-600 font-bold text-[10px]">Gap:</span> {ms}
                         </span>
                       ))}
                     </div>
