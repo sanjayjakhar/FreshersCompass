@@ -57,10 +57,33 @@ export const fetchLatestResume = async (force = false) => {
   return pendingResumePromise;
 };
 
-export const uploadResumeToDB = async (file) => {
+export const fetchAllResumeVersions = async () => {
+  try {
+    const res = await api.get('/resume/versions');
+    return res.data?.data || [];
+  } catch (err) {
+    console.error('Error fetching resume versions:', err);
+    return [];
+  }
+};
+
+export const fetchResumeById = async (id) => {
+  try {
+    const res = await api.get(`/resume/${id}`);
+    return res.data?.data || null;
+  } catch (err) {
+    console.error('Error fetching resume by id:', err);
+    return null;
+  }
+};
+
+export const uploadResumeToDB = async (file, versionLabel = '') => {
   invalidateResumeCache();
   const formData = new FormData();
   formData.append('resume', file);
+  if (versionLabel) {
+    formData.append('versionLabel', versionLabel);
+  }
   const res = await api.post('/resume/upload', formData);
   cachedResume = res.data?.data;
   resumeCacheExpiry = Date.now() + 8000;
@@ -73,6 +96,11 @@ export const seedDemoResumeToDB = async () => {
   cachedResume = res.data?.data;
   resumeCacheExpiry = Date.now() + 8000;
   return res.data?.data;
+};
+
+export const deleteResumeVersionFromDB = async (id) => {
+  invalidateResumeCache();
+  await api.delete(`/resume/${id}`);
 };
 
 export const deleteResumeFromDB = async () => {

@@ -4,21 +4,31 @@ import axios from 'axios';
 import {
   UploadCloud, FileText, CheckCircle2, AlertTriangle, AlertCircle,
   Loader2, Zap, X, ChevronRight, Briefcase, GraduationCap,
-  ExternalLink, Github, Linkedin, Sparkles, RefreshCw, Info, ArrowRight
+  ExternalLink, Github, Linkedin, Sparkles, RefreshCw, Info, ArrowRight,
+  GitCompare, Tag, Layers, History
 } from 'lucide-react';
 
 import {
   fetchLatestResume,
+  fetchAllResumeVersions,
+  fetchResumeById,
   uploadResumeToDB,
   seedDemoResumeToDB,
   deleteResumeFromDB,
 } from '../services/api';
+
+import ResumeComparisonModal from '../components/ResumeComparisonModal';
+import ResumeScoreEvolutionChart from '../components/ResumeScoreEvolutionChart';
 
 export default function ResumeATS() {
   const [activeTab, setActiveTab] = useState('resume'); // 'resume' | 'linkedin'
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [parsedData, setParsedData] = useState(null);
+  const [versions, setVersions] = useState([]);
+  const [selectedVersionId, setSelectedVersionId] = useState('');
+  const [versionLabelInput, setVersionLabelInput] = useState('');
+  const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -30,17 +40,43 @@ export default function ResumeATS() {
   const [linkedinResult, setLinkedinResult] = useState(null);
 
   // Load candidate resume directly from MongoDB on mount
-  useEffect(() => {
-    async function loadResumeFromDB() {
-      try {
-        const resume = await fetchLatestResume();
-        if (resume) setParsedData(resume);
-      } catch (e) {
-        console.error('Failed to load resume from MongoDB', e);
+  const loadResumeAndVersions = useCallback(async () => {
+    try {
+      const [latest, allVersions] = await Promise.all([
+        fetchLatestResume(),
+        fetchAllResumeVersions(),
+      ]);
+      if (allVersions && allVersions.length > 0) {
+        setVersions(allVersions);
       }
+      if (latest) {
+        setParsedData(latest);
+        setSelectedVersionId(latest._id);
+      }
+    } catch (e) {
+      console.error('Failed to load resume or versions from MongoDB', e);
     }
-    loadResumeFromDB();
   }, []);
+
+  useEffect(() => {
+    loadResumeAndVersions();
+  }, [loadResumeAndVersions]);
+
+  const handleSelectVersion = async (versionId) => {
+    if (!versionId || versionId === selectedVersionId) return;
+    setLoading(true);
+    try {
+      const doc = await fetchResumeById(versionId);
+      if (doc) {
+        setParsedData(doc);
+        setSelectedVersionId(doc._id);
+      }
+    } catch (err) {
+      console.error('Error switching resume version', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDragEnter = useCallback((e) => {
     e.preventDefault();
@@ -87,6 +123,8 @@ export default function ResumeATS() {
   const clearFile = async () => {
     setFile(null);
     setParsedData(null);
+    setVersions([]);
+    setSelectedVersionId('');
     setError('');
     setSuccessMsg('');
     try {
@@ -109,10 +147,13 @@ export default function ResumeATS() {
     setSuccessMsg('');
 
     try {
-      const savedDoc = await uploadResumeToDB(file);
+      const savedDoc = await uploadResumeToDB(file, versionLabelInput);
       if (savedDoc) {
         setParsedData(savedDoc);
-        setSuccessMsg(`Resume "${file.name}" analyzed successfully! Candidate profile updated.`);
+        setSelectedVersionId(savedDoc._id);
+        setVersionLabelInput('');
+        setSuccessMsg(`Resume "${file.name}" uploaded as "${savedDoc.versionLabel || 'New Version'}"!`);
+        await loadResumeAndVersions();
         if (savedDoc.github_username) {
           window.dispatchEvent(
             new CustomEvent('freshercompass_profile_updated', {
@@ -128,6 +169,28 @@ export default function ResumeATS() {
         err.message ||
         'Error processing resume. Check server connection.'
       );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoadDemo = async () => {
+    setLoading(true);
+    try {
+      const demoData = await seedDemoResumeToDB();
+      if (demoData) {
+        await loadResumeAndVersions();
+        setSuccessMsg('Loaded multiple demo resume iterations for side-by-side comparison!');
+        if (demoData.github_username) {
+          window.dispatchEvent(
+            new CustomEvent('freshercompass_profile_updated', {
+              detail: demoData.github_username,
+            })
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Error seeding demo resume to MongoDB:', err);
     } finally {
       setLoading(false);
     }
@@ -176,28 +239,66 @@ export default function ResumeATS() {
           </p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-1 bg-surface p-1 rounded-xl border border-border self-start">
-          <button
-            onClick={() => setActiveTab('resume')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'resume'
-                ? 'bg-white text-primary shadow-xs'
-                : 'text-text-body hover:text-text-dark'
-            }`}
-          >
-            Resume ATS Analysis
-          </button>
-          <button
-            onClick={() => setActiveTab('linkedin')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'linkedin'
-                ? 'bg-white text-primary shadow-xs'
-                : 'text-text-body hover:text-text-dark'
-            }`}
-          >
-            LinkedIn Review
-          </button>
+        {/* Version Selector & Tab Switcher */}
+        <div className="flex items-center gap-2.5 flex-wrap self-start">
+          {versions.length > 0 && (
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-border shadow-2xs">
+              <History className="h-3.5 w-3.5 text-primary shrink-0" />
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="resume-version-select" className="text-[11px] font-semibold text-text-muted">
+                  Version:
+                </label>
+                <select
+                  id="resume-version-select"
+                  value={selectedVersionId}
+                  onChange={(e) => handleSelectVersion(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-text-dark focus:outline-none cursor-pointer max-w-[210px] truncate"
+                >
+                  {versions.map((v) => (
+                    <option key={v._id} value={v._id}>
+                      {v.versionLabel || `Version ${v.versionNumber}`} ({v.ats_score} pts)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {versions.length >= 2 && (
+            <button
+              id="compare-versions-btn"
+              type="button"
+              onClick={() => setIsComparisonModalOpen(true)}
+              className="btn-accent px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs"
+            >
+              <GitCompare className="h-3.5 w-3.5" />
+              <span>Compare Versions</span>
+            </button>
+          )}
+
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-1 bg-surface p-1 rounded-xl border border-border">
+            <button
+              onClick={() => setActiveTab('resume')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'resume'
+                  ? 'bg-white text-primary shadow-xs'
+                  : 'text-text-body hover:text-text-dark'
+              }`}
+            >
+              Resume ATS Analysis
+            </button>
+            <button
+              onClick={() => setActiveTab('linkedin')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'linkedin'
+                  ? 'bg-white text-primary shadow-xs'
+                  : 'text-text-body hover:text-text-dark'
+              }`}
+            >
+              LinkedIn Review
+            </button>
+          </div>
         </div>
       </div>
 
@@ -242,6 +343,11 @@ export default function ResumeATS() {
           <p className="text-[11px] text-text-muted mt-2">Grouped by critical and minor impact</p>
         </div>
       </div>
+
+      {/* Score Evolution Trendline across uploads */}
+      {versions.length >= 2 && (
+        <ResumeScoreEvolutionChart versions={versions} />
+      )}
 
       {/* 3. Tab 1: Resume Upload & Analysis */}
       {activeTab === 'resume' && (
@@ -311,6 +417,21 @@ export default function ResumeATS() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Optional Custom Version Label */}
+              <div className="mt-3">
+                <label className="text-[11px] font-semibold text-text-dark flex items-center gap-1 mb-1">
+                  <Tag className="h-3 w-3 text-primary" />
+                  <span>Version Name / Target Role (Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={versionLabelInput}
+                  onChange={(e) => setVersionLabelInput(e.target.value)}
+                  placeholder="e.g. Google SDE Application, Fintech Backend"
+                  className="w-full px-3 py-2 bg-white border border-border rounded-lg text-xs text-text-dark focus:outline-none focus:border-primary placeholder:text-text-muted"
+                />
               </div>
 
               {/* Single Coral CTA Button */}
@@ -521,26 +642,7 @@ export default function ResumeATS() {
                     <span>Choose Resume File</span>
                   </button>
                   <button
-                    onClick={async () => {
-                      setLoading(true);
-                      try {
-                        const demoData = await seedDemoResumeToDB();
-                        if (demoData) {
-                          setParsedData(demoData);
-                          if (demoData.github_username) {
-                            window.dispatchEvent(
-                              new CustomEvent('freshercompass_profile_updated', {
-                                detail: demoData.github_username,
-                              })
-                            );
-                          }
-                        }
-                      } catch (err) {
-                        console.error('Error seeding demo resume to MongoDB:', err);
-                      } finally {
-                        setLoading(false);
-                      }
-                    }}
+                    onClick={handleLoadDemo}
                     className="btn-ghost text-xs font-semibold py-2.5 px-4"
                   >
                     <span>Load Demo Candidate Data</span>
@@ -661,6 +763,14 @@ export default function ResumeATS() {
           </div>
         </div>
       )}
+
+      {/* Side-by-Side Version Comparison Modal */}
+      <ResumeComparisonModal
+        isOpen={isComparisonModalOpen}
+        onClose={() => setIsComparisonModalOpen(false)}
+        versions={versions}
+        currentVersionId={selectedVersionId}
+      />
     </div>
   );
 }

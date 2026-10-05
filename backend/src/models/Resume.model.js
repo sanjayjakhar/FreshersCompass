@@ -32,11 +32,14 @@ const resumeSchema = new mongoose.Schema(
     improvement_suggestions: { type: [String], default: [] },
     fileName: { type: String, default: '' },
     fileSize: { type: Number, default: 0 },
+    versionLabel: { type: String, default: 'General Application' },
+    versionNumber: { type: Number, default: 1 },
   },
   { timestamps: true }
 );
 
-// Optimize query for latest resume
+// Optimize query for resumes and versioning
+resumeSchema.index({ userId: 1, createdAt: -1 });
 resumeSchema.index({ userId: 1, updatedAt: -1 });
 
 export default mongoose.model('Resume', resumeSchema);
