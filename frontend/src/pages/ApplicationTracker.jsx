@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   CheckSquare, Plus, Building2, Calendar, MapPin,
   ChevronRight, X, ArrowRight, ExternalLink, Trash2, Loader2, Search,
-  Sparkles, RotateCcw
+  Sparkles, RotateCcw, LayoutGrid, List, Download, FileSpreadsheet, FileJson,
+  GripVertical
 } from 'lucide-react';
 import {
   fetchApplicationsFromDB,
@@ -20,19 +21,25 @@ export default function ApplicationTracker() {
   const [applications, setApplications] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const [viewMode, setViewMode] = useState('kanban'); // 'kanban' | 'list'
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
+  // Drag and drop state
+  const [draggedAppId, setDraggedAppId] = useState(null);
+  const [dragOverCol, setDragOverCol] = useState(null);
 
   const [newCompany, setNewCompany] = useState('');
   const [newRole, setNewRole] = useState('');
   const [newLocation, setNewLocation] = useState('Remote');
   const [newStatus, setNewStatus] = useState('applied');
+  const [newJobUrl, setNewJobUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
 
   const loadApplications = async () => {
     try {
       setLoading(true);
       const data = await fetchApplicationsFromDB();
-      setApplications(data);
+      setApplications(data || []);
     } catch (err) {
       console.error('Failed to load applications from MongoDB:', err);
     } finally {
@@ -55,6 +62,7 @@ export default function ApplicationTracker() {
         role: newRole.trim(),
         location: newLocation.trim() || 'Remote',
         status: newStatus,
+        jobUrl: newJobUrl.trim(),
         appliedDate: new Date().toISOString().split('T')[0],
         matchScore: Math.floor(Math.random() * 15) + 82, // realistic match score 82-96
       });
@@ -67,6 +75,8 @@ export default function ApplicationTracker() {
 
       setNewCompany('');
       setNewRole('');
+      setNewLocation('Remote');
+      setNewJobUrl('');
       setShowAddModal(false);
     } catch (err) {
       console.error('Failed to create application in MongoDB:', err);
@@ -104,7 +114,7 @@ export default function ApplicationTracker() {
     try {
       setLoading(true);
       const data = await seedDemoApplicationsToDB();
-      setApplications(data);
+      setApplications(data || []);
     } catch (err) {
       console.error('Failed to seed demo applications:', err);
     } finally {
@@ -125,8 +135,78 @@ export default function ApplicationTracker() {
     }
   };
 
+  // Drag and drop handlers
+  const handleDragStart = (e, appId) => {
+    e.dataTransfer.setData('text/plain', appId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedAppId(appId);
+  };
+
+  const handleDragOver = (e, colKey) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverCol !== colKey) {
+      setDragOverCol(colKey);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setDragOverCol(null);
+  };
+
+  const handleDrop = async (e, targetStatus) => {
+    e.preventDefault();
+    setDragOverCol(null);
+    const appId = e.dataTransfer.getData('text/plain') || draggedAppId;
+    setDraggedAppId(null);
+    if (!appId) return;
+
+    const currentApp = applications.find(a => (a._id === appId || a.id === appId));
+    if (currentApp && currentApp.status !== targetStatus) {
+      await moveStatus(appId, targetStatus);
+    }
+  };
+
+  // Export handlers
+  const handleExportCSV = () => {
+    if (!applications.length) return;
+    const headers = ['Company', 'Role', 'Location', 'Status', 'Match Score', 'Applied Date', 'Job URL'];
+    const rows = applications.map((a) => [
+      `"${(a.company || '').replace(/"/g, '""')}"`,
+      `"${(a.role || '').replace(/"/g, '""')}"`,
+      `"${(a.location || '').replace(/"/g, '""')}"`,
+      `"${a.status || 'applied'}"`,
+      `"${a.matchScore || ''}"`,
+      `"${a.appliedDate || ''}"`,
+      `"${(a.jobUrl || '').replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `fresherscompass_applications_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setShowExportMenu(false);
+  };
+
+  const handleExportJSON = () => {
+    if (!applications.length) return;
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(applications, null, 2));
+    const link = document.createElement('a');
+    link.setAttribute('href', dataStr);
+    link.setAttribute('download', `fresherscompass_applications_${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setShowExportMenu(false);
+  };
+
   const columns = [
     { key: 'applied', label: 'Applied', color: 'border-t-warning text-warning' },
+    { key: 'screening', label: 'Screening', color: 'border-t-purple-500 text-purple-600' },
     { key: 'interviewing', label: 'Interviewing', color: 'border-t-primary text-primary' },
     { key: 'offer', label: 'Offer Received', color: 'border-t-success text-success' },
     { key: 'rejected', label: 'Archived / Rejected', color: 'border-t-border text-text-muted' },
@@ -142,6 +222,12 @@ export default function ApplicationTracker() {
     );
   }, [applications, debouncedSearchQuery]);
 
+  const avgMatchScore = useMemo(() => {
+    if (!applications.length) return 85;
+    const sum = applications.reduce((acc, a) => acc + (a.matchScore || 85), 0);
+    return Math.round(sum / applications.length);
+  }, [applications]);
+
   return (
     <div className="space-y-8 animate-fade-up">
       {/* 1. Header & Actions */}
@@ -151,11 +237,78 @@ export default function ApplicationTracker() {
             Application Tracker
           </h1>
           <p className="text-text-body text-sm mt-1">
-            Kanban pipeline tracking interview velocity, job status, and follow-ups.
+            Kanban & list pipeline tracking interview velocity, job status, and follow-ups.
           </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* View Mode Switcher */}
+          <div className="flex items-center bg-white border border-border rounded-xl p-1 shadow-2xs">
+            <button
+              onClick={() => setViewMode('kanban')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                viewMode === 'kanban'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'text-text-muted hover:text-text-dark'
+              }`}
+              title="Kanban Board View"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Kanban</span>
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                viewMode === 'list'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'text-text-muted hover:text-text-dark'
+              }`}
+              title="List View"
+            >
+              <List className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">List</span>
+            </button>
+          </div>
+
+          {/* Export Menu */}
+          {applications.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold text-text-dark hover:bg-surface transition shadow-2xs cursor-pointer"
+                title="Export tracked applications"
+              >
+                <Download className="h-3.5 w-3.5 text-primary" />
+                <span>Export</span>
+              </button>
+
+              {showExportMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-20"
+                    onClick={() => setShowExportMenu(false)}
+                  />
+                  <div className="absolute right-0 mt-1.5 w-44 bg-white rounded-xl border border-border shadow-lg p-1 z-30 space-y-0.5 animate-scale-in">
+                    <button
+                      onClick={handleExportCSV}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-text-dark hover:bg-surface rounded-lg transition-colors text-left"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-success" />
+                      <span>Export as CSV</span>
+                    </button>
+                    <button
+                      onClick={handleExportJSON}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-text-dark hover:bg-surface rounded-lg transition-colors text-left"
+                    >
+                      <FileJson className="h-4 w-4 text-primary" />
+                      <span>Export as JSON</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {applications.length > 0 && (
             <button
               onClick={handleResetSlate}
@@ -167,7 +320,7 @@ export default function ApplicationTracker() {
             </button>
           )}
 
-          {/* Single Coral CTA (#D85A30) */}
+          {/* Add Application CTA */}
           <button
             onClick={() => setShowAddModal(true)}
             className="btn-accent text-xs font-bold py-2.5 px-4"
@@ -180,26 +333,32 @@ export default function ApplicationTracker() {
 
       {/* 2. Key Stats Row & Filter Search Bar */}
       <div className="space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
-            <span className="text-xs font-semibold text-text-body">Active Applications</span>
-            <p className="text-2xl font-black text-text-dark mt-1">{applications.length}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+          <div className="bg-surface rounded-card border border-border p-3.5 shadow-2xs">
+            <span className="text-xs font-semibold text-text-body">Total Tracked</span>
+            <p className="text-xl sm:text-2xl font-black text-text-dark mt-1">{applications.length}</p>
           </div>
-          <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
-            <span className="text-xs font-semibold text-text-body">In Interview Stage</span>
-            <p className="text-2xl font-black text-primary mt-1">
+          <div className="bg-surface rounded-card border border-border p-3.5 shadow-2xs">
+            <span className="text-xs font-semibold text-text-body">Screening</span>
+            <p className="text-xl sm:text-2xl font-black text-purple-600 mt-1">
+              {applications.filter((a) => a.status === 'screening').length}
+            </p>
+          </div>
+          <div className="bg-surface rounded-card border border-border p-3.5 shadow-2xs">
+            <span className="text-xs font-semibold text-text-body">Interviewing</span>
+            <p className="text-xl sm:text-2xl font-black text-primary mt-1">
               {applications.filter((a) => a.status === 'interviewing').length}
             </p>
           </div>
-          <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
+          <div className="bg-surface rounded-card border border-border p-3.5 shadow-2xs">
             <span className="text-xs font-semibold text-text-body">Offers</span>
-            <p className="text-2xl font-black text-success mt-1">
+            <p className="text-xl sm:text-2xl font-black text-success mt-1">
               {applications.filter((a) => a.status === 'offer').length}
             </p>
           </div>
-          <div className="bg-surface rounded-card border border-border p-4 shadow-2xs">
-            <span className="text-xs font-semibold text-text-body">Avg Match Score</span>
-            <p className="text-2xl font-black text-secondary mt-1">88%</p>
+          <div className="bg-surface rounded-card border border-border p-3.5 shadow-2xs">
+            <span className="text-xs font-semibold text-text-body">Avg Match</span>
+            <p className="text-xl sm:text-2xl font-black text-secondary mt-1">{avgMatchScore}%</p>
           </div>
         </div>
 
@@ -226,9 +385,9 @@ export default function ApplicationTracker() {
         )}
       </div>
 
-      {/* 3. Trello-Style Kanban Board or Guided Empty State */}
+      {/* 3. Main Views: Kanban vs List */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {columns.map((c) => (
             <div key={c.key} className="bg-surface rounded-card border border-border p-4 animate-pulse space-y-3">
               <div className="h-4 bg-border/60 rounded w-24"></div>
@@ -265,16 +424,22 @@ export default function ApplicationTracker() {
             </button>
           </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
+      ) : viewMode === 'kanban' ? (
+        /* KANBAN BOARD VIEW WITH DRAG & DROP */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-start">
           {columns.map((col) => {
             const colApps = filteredApplications.filter((a) => a.status === col.key);
-
+            const isOver = dragOverCol === col.key;
 
             return (
               <div
                 key={col.key}
-                className={`bg-surface rounded-card border border-border border-t-4 p-4 shadow-sm space-y-3 ${col.color}`}
+                onDragOver={(e) => handleDragOver(e, col.key)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, col.key)}
+                className={`bg-surface rounded-card border border-t-4 p-3.5 shadow-sm space-y-3 transition-colors ${
+                  isOver ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-border'
+                } ${col.color}`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-text-dark">
@@ -285,15 +450,25 @@ export default function ApplicationTracker() {
                   </span>
                 </div>
 
-                <div className="space-y-2.5 min-h-[160px]">
+                <div className="space-y-2.5 min-h-[180px]">
                   {colApps.map((app) => {
                     const appId = app._id || app.id;
+                    const isDragging = draggedAppId === appId;
+
                     return (
                       <div
                         key={appId}
-                        className="p-3.5 bg-white rounded-xl border border-border hover:border-primary/40 transition-all shadow-xs space-y-2"
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, appId)}
+                        onDragEnd={() => {
+                          setDraggedAppId(null);
+                          setDragOverCol(null);
+                        }}
+                        className={`p-3 bg-white rounded-xl border border-border hover:border-primary/40 transition-all shadow-xs space-y-2 cursor-grab active:cursor-grabbing ${
+                          isDragging ? 'opacity-40 scale-95 border-dashed border-primary' : ''
+                        }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-1.5">
                           <div className="min-w-0">
                             <h4 className="text-xs font-bold text-text-dark leading-snug truncate">{app.role}</h4>
                             <p className="text-[11px] font-semibold text-primary mt-0.5 truncate">{app.company}</p>
@@ -303,9 +478,22 @@ export default function ApplicationTracker() {
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-2 text-[10px] text-text-muted">
-                          <MapPin className="h-3 w-3 text-text-muted" aria-hidden="true" />
-                          <span className="truncate">{app.location}</span>
+                        <div className="flex items-center justify-between text-[10px] text-text-muted">
+                          <div className="flex items-center gap-1 truncate">
+                            <MapPin className="h-3 w-3 text-text-muted shrink-0" aria-hidden="true" />
+                            <span className="truncate">{app.location || 'Remote'}</span>
+                          </div>
+                          {app.jobUrl && (
+                            <a
+                              href={app.jobUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open original job posting"
+                              className="text-primary hover:underline inline-flex items-center gap-0.5"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
                         </div>
 
                         <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
@@ -317,9 +505,10 @@ export default function ApplicationTracker() {
                               aria-label={`Change stage for ${app.role} at ${app.company}`}
                               value={app.status}
                               onChange={(e) => moveStatus(appId, e.target.value)}
-                              className="text-[10px] bg-surface rounded px-1.5 py-1 border border-border text-text-dark focus:outline-none focus:ring-1 focus:ring-primary min-h-[28px]"
+                              className="text-[10px] bg-surface rounded px-1.5 py-1 border border-border text-text-dark focus:outline-none focus:ring-1 focus:ring-primary min-h-[26px]"
                             >
                               <option value="applied">Applied</option>
+                              <option value="screening">Screening</option>
                               <option value="interviewing">Interview</option>
                               <option value="offer">Offer</option>
                               <option value="rejected">Archived</option>
@@ -340,7 +529,7 @@ export default function ApplicationTracker() {
 
                   {colApps.length === 0 && (
                     <div className="p-6 border border-dashed border-border rounded-xl text-center space-y-2">
-                      <p className="text-text-muted text-xs">No applications in this stage</p>
+                      <p className="text-text-muted text-xs">No applications</p>
                       <button
                         onClick={() => {
                           setNewStatus(col.key);
@@ -357,6 +546,96 @@ export default function ApplicationTracker() {
               </div>
             );
           })}
+        </div>
+      ) : (
+        /* LIST VIEW TABLE */
+        <div className="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-surface border-b border-border text-text-muted font-bold uppercase tracking-wider text-[11px]">
+                <tr>
+                  <th className="py-3 px-4">Role & Company</th>
+                  <th className="py-3 px-4">Location</th>
+                  <th className="py-3 px-4">Pipeline Stage</th>
+                  <th className="py-3 px-4">Match Score</th>
+                  <th className="py-3 px-4">Applied Date</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border text-text-dark">
+                {filteredApplications.map((app) => {
+                  const appId = app._id || app.id;
+                  const stageBadgeColors = {
+                    applied: 'bg-warning/10 text-warning border-warning/20',
+                    screening: 'bg-purple-50 text-purple-600 border-purple-200',
+                    interviewing: 'bg-primary/10 text-primary border-primary/20',
+                    offer: 'bg-success/10 text-success border-success/20',
+                    rejected: 'bg-surface text-text-muted border-border',
+                  };
+
+                  return (
+                    <tr key={appId} className="hover:bg-surface/50 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-text-dark text-xs">{app.role}</div>
+                        <div className="text-[11px] font-medium text-primary mt-0.5">{app.company}</div>
+                      </td>
+                      <td className="py-3.5 px-4 text-text-body">
+                        <div className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-text-muted shrink-0" />
+                          <span>{app.location || 'Remote'}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <select
+                          value={app.status}
+                          onChange={(e) => moveStatus(appId, e.target.value)}
+                          className={`text-xs font-semibold px-2 py-1 rounded-lg border focus:outline-none focus:ring-1 focus:ring-primary ${
+                            stageBadgeColors[app.status] || 'bg-surface text-text-dark border-border'
+                          }`}
+                        >
+                          <option value="applied">Applied</option>
+                          <option value="screening">Screening</option>
+                          <option value="interviewing">Interviewing</option>
+                          <option value="offer">Offer</option>
+                          <option value="rejected">Archived</option>
+                        </select>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="font-bold px-2 py-0.5 bg-secondary/10 text-secondary rounded-md text-[11px]">
+                          {app.matchScore || 85}%
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-text-muted font-mono text-[11px]">
+                        {app.appliedDate || '-'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          {app.jobUrl && (
+                            <a
+                              href={app.jobUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open original job posting"
+                              className="p-1 text-text-muted hover:text-primary rounded transition-colors"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => handleDelete(appId)}
+                            title="Delete application"
+                            className="p-1 text-text-muted hover:text-danger rounded transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -410,6 +689,17 @@ export default function ApplicationTracker() {
               </div>
 
               <div>
+                <label className="text-xs font-bold text-text-dark block mb-1">Job URL (optional)</label>
+                <input
+                  type="url"
+                  value={newJobUrl}
+                  onChange={(e) => setNewJobUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-3 py-2 bg-white rounded-xl border border-border text-xs text-text-dark focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div>
                 <label className="text-xs font-bold text-text-dark block mb-1">Pipeline Stage</label>
                 <select
                   value={newStatus}
@@ -417,6 +707,7 @@ export default function ApplicationTracker() {
                   className="w-full px-3 py-2 bg-white rounded-xl border border-border text-xs text-text-dark focus:outline-none focus:border-primary"
                 >
                   <option value="applied">Applied</option>
+                  <option value="screening">Screening</option>
                   <option value="interviewing">Interviewing</option>
                   <option value="offer">Offer Received</option>
                   <option value="rejected">Archived / Rejected</option>
