@@ -1,0 +1,46 @@
+{
+  "name": "FreshersCompass — AI Career Twin",
+  "short_name": "FreshersCompass",
+  "description": "AI-powered career twin for developers. Resume ATS scoring, mock interviews, and skill roadmaps.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0B0F19",
+  "theme_color": "#111827",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "AI Mock Interview",
+      "url": "/interview",
+      "description": "Practice mock technical and HR interview questions"
+    },
+    {
+      "name": "Skill Roadmap",
+      "url": "/roadmap",
+      "description": "Track developer learning milestones"
+    },
+    {
+      "name": "Job Applications",
+      "url": "/applications",
+      "description": "Track career pipeline and interview dates"
+    }
+  ]
+}
