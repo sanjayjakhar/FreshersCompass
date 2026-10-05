@@ -59,6 +59,8 @@ export const updateProfile = async (req, res) => {
       project_tech,
       project_description,
       project_url,
+      vanity_slug,
+      privacy,
     } = req.body;
 
     const updateFields = {};
@@ -75,6 +77,35 @@ export const updateProfile = async (req, res) => {
     if (project_tech !== undefined) updateFields.project_tech = project_tech;
     if (project_description !== undefined) updateFields.project_description = project_description;
     if (project_url !== undefined) updateFields.project_url = project_url;
+
+    if (vanity_slug !== undefined) {
+      const cleanSlug = vanity_slug.trim().toLowerCase().replace(/^@/, '');
+      if (cleanSlug) {
+        if (!/^[a-z0-9-]+$/.test(cleanSlug)) {
+          return res.status(400).json({
+            message: 'Vanity slug can only contain lowercase alphanumeric characters and hyphens',
+          });
+        }
+        const existing = await Profile.findOne({ vanity_slug: cleanSlug, userId: { $ne: userId } });
+        if (existing) {
+          return res.status(400).json({
+            message: 'This vanity URL slug is already taken. Please choose another.',
+          });
+        }
+        updateFields.vanity_slug = cleanSlug;
+      } else {
+        updateFields.vanity_slug = null;
+      }
+    }
+
+    if (privacy !== undefined && typeof privacy === 'object') {
+      updateFields.privacy = {
+        show_email: privacy.show_email !== undefined ? Boolean(privacy.show_email) : true,
+        show_phone: privacy.show_phone !== undefined ? Boolean(privacy.show_phone) : false,
+        show_gpa: privacy.show_gpa !== undefined ? Boolean(privacy.show_gpa) : true,
+        show_compensation: privacy.show_compensation !== undefined ? Boolean(privacy.show_compensation) : false,
+      };
+    }
 
     const updated = await Profile.findOneAndUpdate(
       { userId },
@@ -106,9 +137,10 @@ export const getPublicProfile = async (req, res) => {
     const escapedUsername = cleanUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const usernameRegex = new RegExp(`^${escapedUsername}$`, 'i');
 
-    // 1. Locate Profile by github_username or userId
+    // 1. Locate Profile by vanity_slug, github_username, or userId
     let profile = await Profile.findOne({
       $or: [
+        { vanity_slug: cleanUsername.toLowerCase() },
         { github_username: usernameRegex },
         { userId: cleanUsername },
       ],
@@ -148,6 +180,7 @@ export const getPublicProfile = async (req, res) => {
         data: {
           candidate_name: fallbackName || 'Developer Candidate',
           github_username: cleanUsername,
+          vanity_slug: null,
           email: `${cleanUsername.toLowerCase()}@example.com`,
           headline: 'Fullstack Engineer & Systems Builder',
           bio: 'Passionate about writing high-performance APIs, distributed systems, and real-time developer tooling.',
@@ -184,15 +217,20 @@ export const getPublicProfile = async (req, res) => {
           ats_score: 85,
           verified: true,
           isDemo: true,
+          privacy: { show_email: true, show_phone: false, show_gpa: true, show_compensation: false },
         },
       });
     }
 
-    // 4. Merge verified profile and resume data
+    // 4. Merge verified profile and resume data with privacy rules applied
+    const privacy = profile?.privacy || { show_email: true, show_phone: false, show_gpa: true, show_compensation: false };
     const publicData = {
       candidate_name: profile?.candidate_name || resume?.name || cleanUsername,
       github_username: profile?.github_username || resume?.github_username || cleanUsername,
-      email: resume?.email || '',
+      vanity_slug: profile?.vanity_slug || null,
+      email: privacy.show_email ? (resume?.email || '') : '',
+      phone: privacy.show_phone ? (resume?.phone || '') : '',
+      privacy,
       headline: profile?.headline || 'Fullstack Engineer & Systems Builder',
       bio: profile?.bio || profile?.about || 'Software engineer specializing in modern web applications.',
       about: profile?.about || profile?.bio || '',
@@ -214,7 +252,7 @@ export const getPublicProfile = async (req, res) => {
         ? resume.skills
         : ['React', 'Node.js', 'Express', 'MongoDB', 'JavaScript', 'Tailwind CSS', 'Git'],
       experience: resume?.experience || [],
-      education: resume?.education || [],
+      education: privacy.show_gpa ? (resume?.education || []) : (resume?.education || []).map(e => ({ ...e, gpa: undefined })),
       ats_score: resume?.ats_score || profile?.readiness_score || 82,
       linkedin_url: resume?.linkedin_url || '',
       portfolio_url: resume?.portfolio_url || '',
@@ -230,4 +268,22 @@ export const getPublicProfile = async (req, res) => {
     console.error('Error fetching public profile:', error.message);
     return res.status(500).json({ message: 'Error retrieving public profile', details: error.message });
   }
+};
+
+/**
+ * Embeddable SVG Verification Badge for GitHub README and LinkedIn
+ */
+export const getVerificationBadge = async (req, res) => {
+  const { username } = req.params;
+  const cleanUsername = (username || 'Developer').replace(/^@/, '');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="230" height="28" viewBox="0 0 230 28" fill="none">
+    <rect width="230" height="28" rx="6" fill="#0F172A"/>
+    <rect width="125" height="28" rx="6" fill="#1E293B"/>
+    <text x="12" y="18" fill="#94A3B8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="600">FreshersCompass</text>
+    <text x="135" y="18" fill="#10B981" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="700">✓ Verified Twin</text>
+  </svg>`;
+
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  return res.status(200).send(svg);
 };

@@ -22,6 +22,13 @@ const profileSchema = new mongoose.Schema(
     project_tech: { type: String, default: '' },
     project_description: { type: String, default: '' },
     project_url: { type: String, default: '' },
+    vanity_slug: { type: String, trim: true, lowercase: true, sparse: true, unique: true },
+    privacy: {
+      show_email: { type: Boolean, default: true },
+      show_phone: { type: Boolean, default: false },
+      show_gpa: { type: Boolean, default: true },
+      show_compensation: { type: Boolean, default: false },
+    },
   },
   {
     timestamps: true,
