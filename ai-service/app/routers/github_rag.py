@@ -1,8 +1,10 @@
+import asyncio
 import os
 import uuid
 import concurrent.futures
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Header, BackgroundTasks, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.services.github_service import (
@@ -15,8 +17,14 @@ from app.services.rag_service import (
     answer_codebase_question,
     generate_recruiter_pitch,
     generate_interview_prep,
+    build_citations,
+    build_codebase_prompt,
+    log_codebase_prompt,
+    retrieve_codebase_context,
     REPO_VECTOR_STORE
 )
+from app.services.llm_stream import stream_codebase_answer
+from app.sse import KEEPALIVE_SECONDS, STREAM_HEADERS, aiterate, format_comment, format_event
 
 router = APIRouter()
 
@@ -283,6 +291,92 @@ async def chat_with_codebase(
     except Exception as e:
         print(f"Error querying codebase: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to answer codebase query: {str(e)}")
+
+@router.post("/chat/stream")
+async def chat_with_codebase_stream(
+    payload: ChatQuestionRequest,
+    request: Request,
+    x_internal_key: Optional[str] = Header(None)
+):
+    """Token-streamed equivalent of POST /chat.
+
+    The buffered endpoint cannot answer until the provider has finished, which
+    is a 3-8 second blank wait on a multi-paragraph answer. Here the citations
+    are sent as soon as retrieval finishes and the text arrives token by token.
+    """
+    verify_internal_auth(x_internal_key)
+
+    if not payload.repo_url or not payload.question:
+        raise HTTPException(status_code=400, detail="Repository URL and question are required")
+
+    try:
+        owner, repo_name = parse_repo_identifier(payload.repo_url)
+        full_name = f"{owner}/{repo_name}".lower()
+
+        # Ensure repository is ingested and indexed (same as the buffered path)
+        if full_name not in REPO_CACHE or full_name not in REPO_VECTOR_STORE:
+            repo_data = fetch_repository_data(payload.repo_url)
+            chunks = chunk_codebase_files(repo_data["file_contents"])
+            index_repository_chunks(full_name, chunks)
+            REPO_CACHE[full_name] = {
+                "metadata": repo_data["metadata"],
+                "health": repo_data["health"],
+            }
+
+        cached = REPO_CACHE.get(full_name, {})
+        meta = cached.get("metadata", {"full_name": full_name})
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        print(f"Error preparing codebase stream: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to answer codebase query: {str(e)}")
+
+    # Retrieval happens before the response starts so that a bad repository or a
+    # failed index still produces a proper HTTP error code instead of a 200 with
+    # an error buried inside the event stream.
+    relevant_chunks = retrieve_codebase_context(full_name, payload.question, top_k=5)
+    system_prompt = build_codebase_prompt(full_name, payload.question, meta, payload.history, relevant_chunks)
+    log_codebase_prompt(full_name, payload.question, system_prompt, relevant_chunks)
+    citations = build_citations(relevant_chunks)
+
+    async def event_stream():
+        # Sources first: the UI can show them while the answer is still typing.
+        yield format_event("meta", {"repo_id": full_name, "citations": citations})
+
+        iterator = stream_codebase_answer(system_prompt)
+        stream = aiterate(iterator).__aiter__()
+        while True:
+            try:
+                # Wait with a timeout so an idle provider cannot leave the
+                # connection looking dead to the browser or an intermediary.
+                item = await asyncio.wait_for(stream.__anext__(), timeout=KEEPALIVE_SECONDS)
+            except asyncio.TimeoutError:
+                yield format_comment()
+                continue
+            except StopAsyncIteration:
+                break
+
+            if await request.is_disconnected():
+                # Candidate navigated away or pressed stop. Close the upstream
+                # generator so the provider call is not left running.
+                iterator.close()
+                print("[RAG Q&A stream] client disconnected, closing upstream stream")
+                return
+
+            if item.get("type") == "delta":
+                yield format_event("token", {"text": item["text"]})
+            elif item.get("type") == "model":
+                yield format_event("done", {"model_used": item["label"]})
+                return
+            elif item.get("type") == "error":
+                yield format_event("error", {"message": item["message"]})
+                return
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers=STREAM_HEADERS,
+    )
 
 @router.post("/pitch")
 async def get_recruiter_pitch(

@@ -6,9 +6,9 @@ import {
   Code2, Send, Bot, User, Sparkles, Copy, Check, FileCode,
   ShieldCheck, BookOpen, Layers, Terminal, RefreshCw, ExternalLink,
   ChevronRight, ArrowRight, CornerDownLeft, FileText, Download, Rocket,
-  Trash2, Info
+  Trash2, Info, Square
 } from 'lucide-react';
-import api, { fetchProfileFromDB, updateProfileInDB } from '../services/api';
+import api, { API_BASE, fetchProfileFromDB, updateProfileInDB } from '../services/api';
 
 // ---------- Circular Animated Health Score Ring ----------
 function ScoreRing({ score, label, sublabel, size = 110, strokeWidth = 8, colorOverride = null }) {
@@ -188,6 +188,7 @@ export default function CodebaseIntelligence() {
   const [chatLoading, setChatLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
   const chatBottomRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   const quickPrompts = [
     {
@@ -487,6 +488,14 @@ export default function CodebaseIntelligence() {
     }
   };
 
+  const handleStopGenerating = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setChatLoading(false);
+  };
+
   const handleSendMessage = async (queryToSend = null) => {
     const q = (queryToSend || inputQuery).trim();
     if (!q || chatLoading || !analysisData) return;
@@ -497,38 +506,156 @@ export default function CodebaseIntelligence() {
     setInputQuery('');
     setChatLoading(true);
 
-    try {
-      const history = updatedMessages.slice(-6).map(m => ({
-        role: m.role,
-        content: m.content
-      }));
+    const history = updatedMessages.slice(-6).map(m => ({
+      role: m.role,
+      content: m.content
+    }));
 
-      const res = await api.post('/github/chat', {
-        repo_url: analysisData.metadata.html_url || repoInput,
-        question: q,
-        history
+    const repoUrl = analysisData.metadata.html_url || repoInput;
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    const assistantIndex = updatedMessages.length;
+    // Add placeholder assistant message that will receive streaming tokens
+    setMessages(prev => [...prev, { role: 'assistant', content: '', citations: [], isStreaming: true }]);
+
+    try {
+      const response = await fetch(`${API_BASE}/github/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          repo_url: repoUrl,
+          question: q,
+          history
+        }),
+        signal: abortController.signal
       });
 
-      const aiResponse = res.data.data;
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: aiResponse.answer,
-          citations: aiResponse.citations || []
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulatedContent = '';
+      let receivedCitations = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+
+        for (const part of parts) {
+          const lines = part.split('\n');
+          let eventType = 'message';
+          let eventData = null;
+
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              try {
+                eventData = JSON.parse(line.slice(6));
+              } catch (e) {
+                eventData = line.slice(6);
+              }
+            }
+          }
+
+          if (eventType === 'meta' && eventData?.citations) {
+            receivedCitations = eventData.citations;
+            setMessages(prev => {
+              const copy = [...prev];
+              if (copy[assistantIndex]) {
+                copy[assistantIndex] = {
+                  ...copy[assistantIndex],
+                  citations: receivedCitations
+                };
+              }
+              return copy;
+            });
+          } else if (eventType === 'token' && eventData?.text) {
+            accumulatedContent += eventData.text;
+            setMessages(prev => {
+              const copy = [...prev];
+              if (copy[assistantIndex]) {
+                copy[assistantIndex] = {
+                  ...copy[assistantIndex],
+                  content: accumulatedContent
+                };
+              }
+              return copy;
+            });
+          } else if (eventType === 'error') {
+            throw new Error(eventData?.message || 'Error from stream');
+          }
         }
-      ]);
+      }
+
+      setMessages(prev => {
+        const copy = [...prev];
+        if (copy[assistantIndex]) {
+          copy[assistantIndex] = {
+            ...copy[assistantIndex],
+            isStreaming: false
+          };
+        }
+        return copy;
+      });
     } catch (err) {
-      console.error(err);
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `⚠️ **Error querying codebase**: ${err.response?.data?.details || err.message || 'Service unavailable'}. Please try again.`,
-          citations: []
-        }
-      ]);
+      if (err.name === 'AbortError') {
+        setMessages(prev => {
+          const copy = [...prev];
+          if (copy[assistantIndex]) {
+            copy[assistantIndex] = {
+              ...copy[assistantIndex],
+              isStreaming: false
+            };
+          }
+          return copy;
+        });
+        return;
+      }
+
+      // Fallback to buffered POST if stream failed
+      try {
+        const res = await api.post('/github/chat', {
+          repo_url: repoUrl,
+          question: q,
+          history
+        });
+
+        const aiResponse = res.data.data;
+        setMessages(prev => {
+          const copy = [...prev];
+          copy[assistantIndex] = {
+            role: 'assistant',
+            content: aiResponse.answer,
+            citations: aiResponse.citations || [],
+            isStreaming: false
+          };
+          return copy;
+        });
+      } catch (fallbackErr) {
+        console.error('Fallback error:', fallbackErr);
+        setMessages(prev => {
+          const copy = [...prev];
+          copy[assistantIndex] = {
+            role: 'assistant',
+            content: `⚠️ **Error querying codebase**: ${fallbackErr.response?.data?.details || fallbackErr.message || 'Service unavailable'}. Please try again.`,
+            citations: [],
+            isStreaming: false
+          };
+          return copy;
+        });
+      }
     } finally {
+      abortControllerRef.current = null;
       setChatLoading(false);
     }
   };
@@ -1006,6 +1133,9 @@ export default function CodebaseIntelligence() {
                           ) : (
                             <div>
                               <FormattedMessage text={m.content} />
+                              {m.isStreaming && (
+                                <span className="inline-block w-1.5 h-4 ml-1 bg-primary animate-pulse align-middle" />
+                              )}
 
                               {/* Citations Box */}
                               {m.citations && m.citations.length > 0 && (
@@ -1039,7 +1169,7 @@ export default function CodebaseIntelligence() {
                       </div>
                     ))}
 
-                    {chatLoading && (
+                    {chatLoading && (!messages[messages.length - 1] || messages[messages.length - 1].role !== 'assistant' || !messages[messages.length - 1].content) && (
                       <div className="flex gap-3 justify-start animate-fade-up">
                         <div className="w-8 h-8 rounded-card bg-white border border-border flex items-center justify-center text-primary shrink-0 mt-1 shadow-2xs">
                           <Bot className="h-4 w-4" />
@@ -1089,13 +1219,25 @@ export default function CodebaseIntelligence() {
                         disabled={chatLoading}
                         className="flex-grow px-4 py-2.5 bg-surface/50 rounded-card border border-border text-text-dark text-sm placeholder:text-text-muted focus:outline-none focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                       />
-                      <button
-                        type="submit"
-                        disabled={chatLoading || !inputQuery.trim()}
-                        className="btn-primary p-2.5 rounded-card shrink-0 cursor-pointer disabled:opacity-40"
-                      >
-                        <Send className="h-4 w-4" />
-                      </button>
+                      {chatLoading ? (
+                        <button
+                          type="button"
+                          onClick={handleStopGenerating}
+                          title="Stop generating"
+                          className="px-3 py-2.5 rounded-card shrink-0 cursor-pointer bg-danger/10 text-danger border border-danger/30 hover:bg-danger hover:text-white transition-all flex items-center gap-1.5 text-xs font-semibold"
+                        >
+                          <Square className="h-4 w-4 fill-current" />
+                          <span className="hidden sm:inline">Stop</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          disabled={!inputQuery.trim()}
+                          className="btn-primary p-2.5 rounded-card shrink-0 cursor-pointer disabled:opacity-40"
+                        >
+                          <Send className="h-4 w-4" />
+                        </button>
+                      )}
                     </form>
                   </div>
                 </div>
