@@ -5,11 +5,13 @@ import {
   Briefcase, Check, X, ArrowRight, Trash2, Sparkles, RefreshCw
 } from 'lucide-react';
 import { fetchProfileFromDB, updateProfileInDB, fetchLatestResume } from '../services/api';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [showGithubModal, setShowGithubModal] = useState(false);
+  const modalRef = useFocusTrap(showGithubModal, () => setShowGithubModal(false));
   const [githubUser, setGithubUser] = useState('');
   const [connectedUser, setConnectedUser] = useState('');
   const [resumeDetectedUser, setResumeDetectedUser] = useState('');
@@ -80,7 +82,7 @@ export default function Navbar() {
 
   return (
     <>
-      <nav className="fixed w-full z-50 bg-surface/85 backdrop-blur-xl border-b border-border/70 transition-all">
+      <nav aria-label="Landing Navigation" className="fixed w-full z-50 bg-surface/85 backdrop-blur-xl border-b border-border/70 transition-all">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             
@@ -187,11 +189,17 @@ export default function Navbar() {
 
       {/* GitHub Sync Modal */}
       {showGithubModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-up">
-          <div className="bg-surface rounded-2xl border border-border p-6 max-w-md w-full shadow-2xl relative">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="navbar-github-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-up"
+        >
+          <div ref={modalRef} className="bg-surface rounded-2xl border border-border p-6 max-w-md w-full shadow-2xl relative">
             <button
               onClick={() => setShowGithubModal(false)}
-              className="absolute top-4 right-4 text-text-muted hover:text-text-primary p-1 rounded-lg hover:bg-surface-muted transition-colors"
+              aria-label="Close dialog"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-primary p-1 rounded-lg hover:bg-surface-muted transition-colors cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -201,7 +209,7 @@ export default function Navbar() {
                 <Github className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-bold text-text-primary text-base">GitHub Profile Integration</h3>
+                <h3 id="navbar-github-modal-title" className="font-bold text-text-primary text-base">GitHub Profile Integration</h3>
                 <p className="text-xs text-text-secondary">Sync your repositories for Codebase RAG</p>
               </div>
             </div>

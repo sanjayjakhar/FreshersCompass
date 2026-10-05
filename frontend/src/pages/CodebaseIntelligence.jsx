@@ -755,7 +755,11 @@ export default function CodebaseIntelligence() {
 
         {/* Live Loading Progress Bar & Status */}
         {loading && (
-          <div className="bg-surface rounded-card border border-border p-8 text-center shadow-2xs mb-8 animate-fade-up">
+          <div
+            role="status"
+            aria-live="polite"
+            className="bg-surface rounded-card border border-border p-8 text-center shadow-2xs mb-8 animate-fade-up"
+          >
             <div className="w-12 h-12 rounded-xl bg-primary-subtle flex items-center justify-center mx-auto mb-4 text-primary">
               <RefreshCw className="h-6 w-6 animate-spin" />
             </div>
@@ -791,8 +795,16 @@ export default function CodebaseIntelligence() {
 
             {/* Feature Tabs Navigation Bar */}
             <div className="bg-surface rounded-card border border-border p-2.5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div
+                role="tablist"
+                aria-label="Codebase intelligence feature tabs"
+                className="flex flex-wrap items-center gap-1.5"
+              >
                 <button
+                  role="tab"
+                  id="tab-chat"
+                  aria-selected={activeTab === 'chat'}
+                  aria-controls="panel-chat"
                   onClick={() => setActiveTab('chat')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'chat'
@@ -805,6 +817,10 @@ export default function CodebaseIntelligence() {
                   <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[9px] font-extrabold tracking-wide">PRIMARY</span>
                 </button>
                 <button
+                  role="tab"
+                  id="tab-health"
+                  aria-selected={activeTab === 'health'}
+                  aria-controls="panel-health"
                   onClick={() => setActiveTab('health')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'health'
@@ -816,6 +832,10 @@ export default function CodebaseIntelligence() {
                   <span>Code Health & Audit</span>
                 </button>
                 <button
+                  role="tab"
+                  id="tab-pitch"
+                  aria-selected={activeTab === 'pitch'}
+                  aria-controls="panel-pitch"
                   onClick={() => setActiveTab('pitch')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'pitch'
@@ -827,6 +847,10 @@ export default function CodebaseIntelligence() {
                   <span>Recruiter Pitch (XYZ)</span>
                 </button>
                 <button
+                  role="tab"
+                  id="tab-readme"
+                  aria-selected={activeTab === 'readme'}
+                  aria-controls="panel-readme"
                   onClick={() => setActiveTab('readme')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-card text-xs font-semibold transition-all duration-200 cursor-pointer ${
                     activeTab === 'readme'
@@ -980,7 +1004,13 @@ export default function CodebaseIntelligence() {
                   </div>
 
                   {/* Chat Message Stream */}
-                  <div className="flex-grow p-5 overflow-y-auto space-y-4">
+                  <div
+                    role="log"
+                    aria-live="polite"
+                    aria-atomic="false"
+                    aria-label="Codebase chat conversation history"
+                    className="flex-grow p-5 overflow-y-auto space-y-4"
+                  >
                     {messages.map((m, idx) => (
                       <div
                         key={idx}

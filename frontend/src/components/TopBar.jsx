@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Search, Bell, Menu, Github, Sparkles, X, ArrowRight, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchProfileFromDB, updateProfileInDB, fetchLatestResume } from '../services/api';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 export default function TopBar({ setMobileOpen }) {
   const navigate = useNavigate();
@@ -11,6 +12,7 @@ export default function TopBar({ setMobileOpen }) {
   const [resumeDetectedUser, setResumeDetectedUser] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const modalRef = useFocusTrap(showGithubModal, () => setShowGithubModal(false));
   const connectedUserRef = useRef('');
   const resumeDetectedUserRef = useRef('');
 
@@ -190,11 +192,17 @@ export default function TopBar({ setMobileOpen }) {
 
       {/* GitHub Sync Modal */}
       {showGithubModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="bg-surface rounded-card border border-border p-6 max-w-md w-full shadow-lg relative">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="topbar-github-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
+        >
+          <div ref={modalRef} className="bg-surface rounded-card border border-border p-6 max-w-md w-full shadow-lg relative">
             <button
               onClick={() => setShowGithubModal(false)}
-              className="absolute top-4 right-4 text-text-muted hover:text-text-dark p-1 rounded-lg hover:bg-white transition-colors"
+              aria-label="Close dialog"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-dark p-1 rounded-lg hover:bg-white transition-colors cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -204,7 +212,7 @@ export default function TopBar({ setMobileOpen }) {
                 <Github className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-bold text-text-dark text-base">GitHub Integration</h3>
+                <h3 id="topbar-github-modal-title" className="font-bold text-text-dark text-base">GitHub Integration</h3>
                 <p className="text-xs text-text-body">Sync repositories for Codebase RAG and Career Twin</p>
               </div>
             </div>
