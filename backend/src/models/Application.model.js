@@ -8,7 +8,7 @@ const applicationSchema = new mongoose.Schema(
     location: { type: String, default: 'Remote' },
     status: {
       type: String,
-      enum: ['applied', 'interviewing', 'offer', 'rejected'],
+      enum: ['applied', 'screening', 'interviewing', 'offer', 'rejected'],
       default: 'applied',
     },
     appliedDate: { type: String, default: () => new Date().toISOString().split('T')[0] },
