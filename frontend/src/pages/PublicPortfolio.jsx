@@ -6,6 +6,7 @@ import {
   ArrowRight, ShieldCheck, Cpu, Terminal
 } from 'lucide-react';
 import { fetchPublicProfile } from '../services/api';
+import CandidateAvatar from '../components/CandidateAvatar';
 
 export default function PublicPortfolio() {
   const { username } = useParams();
@@ -63,12 +64,6 @@ export default function PublicPortfolio() {
   const projectDesc = profile?.project_description || 'Next-generation AI career acceleration platform for early-career developers.';
   const experience = profile?.experience || [];
   const education = profile?.education || [];
-  const initials = name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join('');
 
   // SEO & Social Graph: Inject dynamic Schema.org JSON-LD & OpenGraph meta tags (#42)
   useEffect(() => {
@@ -233,9 +228,13 @@ export default function PublicPortfolio() {
         <div className="bg-white rounded-2xl border border-border p-6 sm:p-8 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 border-b border-border/80">
             <div className="flex items-start gap-4">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-surface border border-border/80 flex items-center justify-center font-black text-2xl text-primary shrink-0 shadow-2xs">
-                {initials || 'FC'}
-              </div>
+              <CandidateAvatar
+                src={profile?.avatar_url}
+                name={name}
+                username={githubUser}
+                size="xl"
+                className="shadow-2xs"
+              />
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl sm:text-3xl font-black text-text-dark tracking-tight">
