@@ -120,6 +120,20 @@ app.get("/api/health/diagnostics", async (req, res) => {
 });
 
 
+app.get("/api/llm/status", async (req, res) => {
+  // Provider breaker state drives the "Offline Mode Active" badge. A failure
+  // here must not block the page: report "unknown" so the badge stays hidden
+  // rather than claiming an outage we could not confirm.
+  const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+  try {
+    const aiResp = await axios.get(`${aiServiceUrl}/llm/status`, { timeout: 4000 });
+    return res.json({ status: "ok", ...aiResp.data?.data });
+  } catch (err) {
+    return res.json({ status: "unknown", offline_mode: false, providers: [] });
+  }
+});
+
+
 // ---------- Routes ----------
 import authRoutes from "./routes/auth.routes.js";
 import resumeRoutes from "./routes/resume.routes.js";

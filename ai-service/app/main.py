@@ -13,6 +13,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+from app.services import llm_service
+
 load_dotenv()
 
 app = FastAPI(title="FreshersCompass AI Service")
@@ -29,6 +31,17 @@ app.add_middleware(
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "freshercompass-ai-service"}
+
+
+@app.get("/llm/status")
+def llm_status():
+    """
+    Provider breaker state, backing the "Offline Mode Active" UI badge.
+
+    Unauthenticated by design: it exposes no keys and no prompts, only whether a
+    provider is configured and whether its circuit is open.
+    """
+    return {"status": "success", "data": llm_service.status()}
 
 
 # ---------- Routers ----------
