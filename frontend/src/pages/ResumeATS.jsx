@@ -5,7 +5,7 @@ import {
   UploadCloud, FileText, CheckCircle2, AlertTriangle, AlertCircle,
   Loader2, Zap, X, ChevronRight, Briefcase, GraduationCap,
   ExternalLink, Github, Linkedin, Sparkles, RefreshCw, Info, ArrowRight,
-  Sliders, Download
+  Sliders, Download, Share2
 } from 'lucide-react';
 
 import {
@@ -16,6 +16,7 @@ import {
 } from '../services/api';
 
 import ResumeSectionEditor from '../components/ResumeSectionEditor';
+import ResumeShareBadgeModal from '../components/ResumeShareBadgeModal';
 
 export default function ResumeATS() {
   const [activeTab, setActiveTab] = useState('resume'); // 'resume' | 'editor' | 'linkedin'
@@ -25,7 +26,12 @@ export default function ResumeATS() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const fileInputRef = useRef(null);
+
+  const handleDownloadPDF = () => {
+    window.print();
+  };
 
   // LinkedIn Optimization State
   const [linkedinText, setLinkedinText] = useState('');
@@ -179,40 +185,67 @@ export default function ResumeATS() {
           </p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-1 bg-surface p-1 rounded-xl border border-border self-start flex-wrap">
-          <button
-            onClick={() => setActiveTab('resume')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'resume'
-                ? 'bg-white text-primary shadow-xs'
-                : 'text-text-body hover:text-text-dark'
-            }`}
-          >
-            Resume ATS Analysis
-          </button>
-          <button
-            id="tab-interactive-ats"
-            onClick={() => setActiveTab('editor')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'editor'
-                ? 'bg-white text-primary shadow-xs'
-                : 'text-text-body hover:text-text-dark'
-            }`}
-          >
-            <Sliders className="h-3.5 w-3.5 text-primary" />
-            <span>Interactive ATS Template & PDF</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('linkedin')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'linkedin'
-                ? 'bg-white text-primary shadow-xs'
-                : 'text-text-body hover:text-text-dark'
-            }`}
-          >
-            LinkedIn Review
-          </button>
+        {/* Actions & Tab Switcher */}
+        <div className="flex items-center gap-2 flex-wrap self-start">
+          {parsedData && (
+            <>
+              <button
+                id="share-score-badge-btn"
+                type="button"
+                onClick={() => setIsShareModalOpen(true)}
+                className="px-3 py-1.5 rounded-lg border border-border bg-white text-xs font-bold text-primary hover:bg-slate-50 transition-all flex items-center gap-1.5 shadow-2xs"
+              >
+                <Share2 className="h-3.5 w-3.5 text-primary" />
+                <span>Share Score Badge</span>
+              </button>
+              <button
+                id="download-ats-ready-pdf-btn"
+                type="button"
+                onClick={handleDownloadPDF}
+                className="btn-accent px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Download ATS-Ready PDF</span>
+              </button>
+            </>
+          )}
+
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-1 bg-surface p-1 rounded-xl border border-border self-start flex-wrap">
+            <button
+              onClick={() => setActiveTab('resume')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'resume'
+                  ? 'bg-white text-primary shadow-xs'
+                  : 'text-text-body hover:text-text-dark'
+              }`}
+            >
+              Resume ATS Analysis
+            </button>
+            <button
+              id="tab-interactive-ats"
+              onClick={() => setActiveTab('editor')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'editor'
+                  ? 'bg-white text-primary shadow-xs'
+                  : 'text-text-body hover:text-text-dark'
+              }`}
+            >
+              <Sliders className="h-3.5 w-3.5 text-primary" />
+              <span>Interactive ATS Template & PDF</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('linkedin')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'linkedin'
+                  ? 'bg-white text-primary shadow-xs'
+                  : 'text-text-body hover:text-text-dark'
+              }`}
+            >
+              LinkedIn Review
+            </button>
+          </div>
+        </div>
         </div>
       </div>
 
@@ -382,7 +415,7 @@ export default function ResumeATS() {
                   </div>
                 )}
 
-                <div className="pt-2 flex flex-col gap-2">
+                <div className="pt-2 flex flex-col gap-2 border-t border-border">
                   <button
                     type="button"
                     onClick={() => setActiveTab('editor')}
@@ -391,6 +424,25 @@ export default function ResumeATS() {
                     <Sliders className="h-3.5 w-3.5" />
                     <span>Customize Hierarchy & Export PDF</span>
                   </button>
+                  <div className="flex items-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsShareModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
+                    >
+                      <Share2 className="h-3.5 w-3.5" />
+                      <span>Share Score Badge</span>
+                    </button>
+                    <span className="text-border">•</span>
+                    <button
+                      type="button"
+                      onClick={handleDownloadPDF}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-accent hover:underline"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>Download PDF</span>
+                    </button>
+                  </div>
                   <Link
                     to="/codebase"
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
@@ -692,6 +744,105 @@ export default function ResumeATS() {
           </div>
         </div>
       )}
+
+      {/* 5. Clean Single-Column Printable ATS Document (Hidden from screen, displayed during print) */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #ats-ready-pdf-area, #ats-ready-pdf-area * {
+            visibility: visible !important;
+          }
+          #ats-ready-pdf-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            padding: 12mm 18mm !important;
+            margin: 0 !important;
+            background: white !important;
+            color: black !important;
+            display: block !important;
+          }
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+        }
+      `}</style>
+
+      <div id="ats-ready-pdf-area" className="hidden print:block text-slate-900 bg-white font-sans text-xs leading-relaxed space-y-4">
+        {parsedData && (
+          <>
+            <header className="border-b border-slate-300 pb-2">
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{parsedData.name || 'Candidate Name'}</h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-600 text-xs mt-1">
+                {parsedData.email && <span>{parsedData.email}</span>}
+                {parsedData.phone && <span>• {parsedData.phone}</span>}
+                {parsedData.github_username && <span>• github.com/{parsedData.github_username}</span>}
+                {parsedData.linkedin_url && <span>• {parsedData.linkedin_url}</span>}
+                {parsedData.portfolio_url && <span>• {parsedData.portfolio_url}</span>}
+              </div>
+            </header>
+
+            {parsedData.skills?.length > 0 && (
+              <section className="space-y-1">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-0.5">
+                  Technical Skills
+                </h2>
+                <p className="text-slate-700">
+                  <strong className="text-slate-900">Keywords: </strong>
+                  {parsedData.skills.join(', ')}
+                </p>
+              </section>
+            )}
+
+            {parsedData.experience?.length > 0 && (
+              <section className="space-y-2">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-0.5">
+                  Work Experience
+                </h2>
+                <div className="space-y-2">
+                  {parsedData.experience.map((exp, idx) => (
+                    <div key={idx} className="space-y-0.5">
+                      <div className="flex justify-between items-baseline font-semibold text-slate-900 text-xs">
+                        <span>{exp.role || exp.title} — <span className="font-normal text-slate-700">{exp.company}</span></span>
+                        <span className="font-mono text-slate-500 text-[11px]">{exp.duration}</span>
+                      </div>
+                      <p className="text-slate-700">{exp.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {parsedData.education?.length > 0 && (
+              <section className="space-y-1.5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-0.5">
+                  Education
+                </h2>
+                {parsedData.education.map((edu, idx) => (
+                  <div key={idx} className="flex justify-between items-baseline text-xs">
+                    <div>
+                      <div className="font-semibold text-slate-900">{edu.degree || edu.field}</div>
+                      <div className="text-slate-700">{edu.institution || edu.school}</div>
+                    </div>
+                    <span className="font-mono text-slate-500 text-[11px]">{edu.year}</span>
+                  </div>
+                ))}
+              </section>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Share Score Badge Modal */}
+      <ResumeShareBadgeModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        parsedData={parsedData}
+      />
     </div>
   );
 }
