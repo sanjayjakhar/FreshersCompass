@@ -3,6 +3,41 @@ import Resume from '../models/Resume.model.js';
 import { getEffectiveUserId } from '../middleware/auth.middleware.js';
 
 /**
+ * Canonical competency dimensions. Kept in sync with Profile.model.js so that
+ * partial updates can be flattened into dot-notation paths and unknown keys are
+ * rejected instead of leaking arbitrary fields into the profile document.
+ */
+const COMPETENCY_DIMENSIONS = ['resume', 'code', 'interview', 'roadmap', 'velocity'];
+
+/**
+ * Flatten a partial sub-document update into MongoDB dot-notation paths.
+ *
+ * `$set: { competency_scores: { interview: 85 } }` replaces the whole
+ * sub-document, silently resetting resume/code/roadmap/velocity to their schema
+ * defaults. Emitting `$set: { 'competency_scores.interview': 85 }` instead makes
+ * the update a true partial merge that preserves sibling dimensions.
+ *
+ * Returns null when the payload contains no recognised dimension, so the caller
+ * can decide whether to reject the request.
+ */
+const flattenCompetencyScores = (scores) => {
+  if (scores === null || typeof scores !== 'object' || Array.isArray(scores)) {
+    return null;
+  }
+
+  const flattened = {};
+  for (const dimension of COMPETENCY_DIMENSIONS) {
+    const value = scores[dimension];
+    if (value === undefined || value === null) continue;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) continue;
+    flattened[`competency_scores.${dimension}`] = Math.min(100, Math.max(0, numeric));
+  }
+
+  return Object.keys(flattened).length > 0 ? flattened : null;
+};
+
+/**
  * Get active candidate profile and aggregated twin telemetry from MongoDB
  */
 export const getProfile = async (req, res) => {
@@ -69,12 +104,29 @@ export const updateProfile = async (req, res) => {
     if (target_role !== undefined) updateFields.target_role = target_role;
     if (about !== undefined) updateFields.about = about;
     if (readiness_score !== undefined) updateFields.readiness_score = readiness_score;
-    if (competency_scores !== undefined) updateFields.competency_scores = competency_scores;
     if (linkedin_data !== undefined) updateFields.linkedin_data = linkedin_data;
     if (featured_project !== undefined) updateFields.featured_project = featured_project;
     if (project_tech !== undefined) updateFields.project_tech = project_tech;
     if (project_description !== undefined) updateFields.project_description = project_description;
     if (project_url !== undefined) updateFields.project_url = project_url;
+
+    // competency_scores is a sub-document: flatten it into dot-notation paths so
+    // a partial update (e.g. { interview: 85 }) merges instead of overwriting and
+    // wiping the sibling dimensions.
+    if (competency_scores !== undefined) {
+      const flattenedScores = flattenCompetencyScores(competency_scores);
+      if (!flattenedScores) {
+        return res.status(400).json({
+          message: 'competency_scores must be an object containing at least one valid numeric dimension',
+          details: `Valid dimensions: ${COMPETENCY_DIMENSIONS.join(', ')}`,
+        });
+      }
+      Object.assign(updateFields, flattenedScores);
+    }
+
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).json({ message: 'No valid update fields provided' });
+    }
 
     const updated = await Profile.findOneAndUpdate(
       { userId },
