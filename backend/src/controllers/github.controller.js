@@ -6,6 +6,39 @@ const getAiServiceHeaders = () => ({
   "x-internal-key": process.env.AI_SERVICE_INTERNAL_KEY || "ai_internal_secret_fc_98u23r09ju023jf",
 });
 
+/**
+ * Headers for outgoing calls to GitHub's public REST API.
+ *
+ * Unauthenticated requests are capped at 60 req/hr per IP address, which is
+ * exhausted quickly when several candidates share a network or a lab machine
+ * syncs portfolios. Supplying GITHUB_TOKEN raises that to 5,000 req/hr.
+ *
+ * The token stays strictly optional: when it is absent (or still holds the
+ * placeholder value shipped in .env.example) the request goes out anonymously
+ * exactly as before, and the existing HTML-scrape fallback still covers the
+ * rate-limited case.
+ */
+const getGithubApiHeaders = () => {
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  const token = String(process.env.GITHUB_TOKEN || "").trim();
+  const isPlaceholder = !token || token.startsWith("your_github") || token.length <= 10;
+
+  if (!isPlaceholder) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+};
+
+/** True when the last GitHub API rejection was a rate-limit rejection. */
+const isRateLimited = (error) =>
+  error.response?.status === 403 || error.response?.status === 429;
+
 
 export const analyzeRepository = async (req, res) => {
   try {
@@ -152,9 +185,8 @@ export const getUserRepositories = async (req, res) => {
     const data = await cacheService.getOrFetch(
       cacheKey,
       async () => {
-        const headers = {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        };
+        const headers = getGithubApiHeaders();
+        const authenticated = Boolean(headers.Authorization);
 
         let profile = {
           login: username,
@@ -201,7 +233,14 @@ export const getUserRepositories = async (req, res) => {
         }));
       }
     } catch (apiErr) {
-      console.log(`GitHub REST API notice (${apiErr.response?.status || apiErr.message}), falling back to direct web fetch...`);
+      const status = apiErr.response?.status || apiErr.message;
+      if (isRateLimited(apiErr)) {
+        console.log(
+          `GitHub REST API rate limited (${status})${authenticated ? " despite GITHUB_TOKEN" : " - set GITHUB_TOKEN in backend/.env to raise the 60 req/hr cap to 5000"}, falling back to direct web fetch...`
+        );
+      } else {
+        console.log(`GitHub REST API notice (${status}), falling back to direct web fetch...`);
+      }
     }
 
     // Attempt 2: Direct public web fetch (completely bypassing rate limits)
