@@ -10,6 +10,7 @@ import {
   trimSnapshots,
   dayKey,
 } from '../services/readiness.service.js';
+import cacheService from '../services/cache.service.js';
 
 /** Cap on retained snapshots, newest first. */
 const SNAPSHOT_LIMIT = 30;
@@ -146,6 +147,14 @@ export const updateProfile = async (req, res) => {
       { upsert: true, new: true }
     );
 
+    // Active cache invalidation for public profiles
+    if (updated?.github_username) {
+      cacheService.delete(`public_profile:${updated.github_username.toLowerCase()}`);
+    }
+    if (updated?.userId) {
+      cacheService.delete(`public_profile:${updated.userId.toLowerCase()}`);
+    }
+
     return res.status(200).json({
       message: 'Profile updated in MongoDB',
       data: updated,
@@ -242,6 +251,17 @@ export const getPublicProfile = async (req, res) => {
     }
 
     const cleanUsername = rawUsername.replace(/^@/, '').trim();
+    const cacheKey = `public_profile:${cleanUsername.toLowerCase()}`;
+
+    // Check distributed Redis cache / memory cache (5-min TTL)
+    const cachedProfile = await cacheService.get(cacheKey);
+    if (cachedProfile) {
+      return res.status(200).json({
+        message: 'Public profile retrieved from cache',
+        data: cachedProfile,
+      });
+    }
+
     const escapedUsername = cleanUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const usernameRegex = new RegExp(`^${escapedUsername}$`, 'i');
 
@@ -365,6 +385,9 @@ export const getPublicProfile = async (req, res) => {
       verified: true,
       isDemo: false,
     };
+
+    // Cache candidate profile for 5 minutes
+    await cacheService.set(cacheKey, publicData, 5 * 60 * 1000);
 
     return res.status(200).json({
       message: 'Public profile retrieved successfully',
