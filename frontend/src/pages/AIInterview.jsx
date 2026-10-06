@@ -53,7 +53,6 @@ export default function AIInterview() {
   const [silencePrompt, setSilencePrompt] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const recognitionRef = useRef(null);
-  const { report: reportOffline } = useOfflineMode();
 
   /**
    * Live mic metering + silence auto-stop (#43, #59).
