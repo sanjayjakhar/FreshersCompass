@@ -4,9 +4,12 @@ import {
   Sparkles, FileText, Code2, Mic, Briefcase, Compass,
   CheckSquare, ArrowRight, TrendingUp, AlertTriangle,
   CheckCircle2, Clock, ChevronRight, Activity, ArrowUpRight,
-  ShieldCheck, Circle
+  ShieldCheck, Circle, Radar
 } from 'lucide-react';
 import { fetchLatestResume, fetchProfileFromDB, fetchApplicationsFromDB } from '../services/api';
+import ReadinessRadar from '../components/ReadinessRadar';
+import ReadinessTrendline from '../components/ReadinessTrendline';
+import useReadinessRadar from '../hooks/useReadinessRadar';
 
 export default function Dashboard() {
   const [resumeData, setResumeData] = useState(null);
@@ -47,6 +50,18 @@ export default function Dashboard() {
   const atsScore = resumeData?.ats_score || 0;
   const githubScore = githubUser ? (profileData?.competency_scores?.code || 80) : 0;
   const interviewScore = profileData?.competency_scores?.interview || 0;
+
+  // Multi-axis readiness model shared with the Career Twin (#58)
+  const {
+    axes: readinessAxes,
+    overallReadiness: radarReadiness,
+    history: readinessHistory,
+    benchmark: readinessBenchmark,
+    targetRole,
+    telemetryError,
+    goToAxis,
+    routes: readinessRoutes,
+  } = useReadinessRadar();
 
   const hasAnyActivity = Boolean(resumeData || githubUser || interviewScore > 0);
   const overallReadiness = hasAnyActivity
@@ -186,6 +201,64 @@ export default function Dashboard() {
             </div>
           </div>
 
+        </div>
+      </div>
+
+      {/* 1b. Multi-axis Readiness Radar + Historical Trendline (#58) */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-4">
+        <div className="bg-surface rounded-card border border-border p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold mb-1">
+                <Radar className="h-3 w-3" />
+                <span>Readiness Radar</span>
+              </div>
+              <h2 className="text-base font-extrabold text-text-dark">
+                Dimensional Career Readiness
+              </h2>
+              <p className="text-xs text-text-body mt-0.5 max-w-xl">
+                A 1D score hides blindspots. Compare each axis against the market average for your
+                target role, then jump straight to whichever axis is dragging.
+              </p>
+            </div>
+            {targetRole && (
+              <span className="text-[11px] font-bold text-text-muted shrink-0">
+                Target: <span className="text-text-dark">{targetRole}</span>
+              </span>
+            )}
+          </div>
+
+          <ReadinessRadar
+            axes={readinessAxes}
+            benchmark={readinessBenchmark}
+            onAxisClick={goToAxis}
+            routes={readinessRoutes}
+          />
+        </div>
+
+        <div className="bg-surface rounded-card border border-border p-6 flex flex-col">
+          <ReadinessTrendline history={readinessHistory} />
+          {telemetryError && (
+            <p className="text-[10px] text-warning mt-3 leading-relaxed">{telemetryError}</p>
+          )}
+          <div className="mt-auto pt-4">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-text-body mb-1">
+              <span className="inline-flex items-center gap-1.5">
+                <TrendingUp className="h-3 w-3 text-secondary" />
+                Weighted readiness index
+              </span>
+              <span className="font-mono font-bold text-text-dark">{radarReadiness}</span>
+            </div>
+            <div className="h-2 w-full bg-white rounded-full overflow-hidden border border-border/50">
+              <div
+                className="h-full bg-secondary rounded-full transition-all duration-700"
+                style={{ width: `${radarReadiness}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-text-muted mt-2 leading-relaxed">
+              Resume and code weigh 25% each, interview 20%, roadmap and pipeline 15% each.
+            </p>
+          </div>
         </div>
       </div>
 

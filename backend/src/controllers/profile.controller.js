@@ -1,6 +1,18 @@
 import Profile from '../models/Profile.model.js';
 import Resume from '../models/Resume.model.js';
 import { getEffectiveUserId } from '../middleware/auth.middleware.js';
+import {
+  READINESS_AXES,
+  computeOverallReadiness,
+  getRoleBenchmark,
+  sanitizeAxes,
+  toTrendSeries,
+  trimSnapshots,
+  dayKey,
+} from '../services/readiness.service.js';
+
+/** Cap on retained snapshots, newest first. */
+const SNAPSHOT_LIMIT = 30;
 
 /**
  * Canonical competency dimensions. Kept in sync with Profile.model.js so that
@@ -141,6 +153,81 @@ export const updateProfile = async (req, res) => {
   } catch (error) {
     console.error('Error updating profile in MongoDB:', error.message);
     return res.status(500).json({ message: 'Error saving profile to database', details: error.message });
+  }
+};
+
+/**
+ * Get readiness radar history + target-role benchmark (#58)
+ */
+export const getReadinessTelemetry = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const profile = await Profile.findOne({ userId }).lean();
+
+    return res.status(200).json({
+      message: 'Readiness telemetry retrieved',
+      data: {
+        history: toTrendSeries(profile?.readiness_snapshots || []),
+        benchmark: getRoleBenchmark(profile?.target_role || ''),
+        target_role: profile?.target_role || '',
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching readiness telemetry:', error.message);
+    return res.status(500).json({ message: 'Error retrieving readiness telemetry', details: error.message });
+  }
+};
+
+/**
+ * Record one readiness radar reading and return the refreshed telemetry (#58)
+ *
+ * One snapshot per UTC day: recording again on the same day overwrites that
+ * day instead of stacking points, which keeps the trendline legible.
+ */
+export const recordReadinessSnapshot = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const axes = sanitizeAxes(req.body?.axes);
+
+    if (axes.length !== READINESS_AXES.length) {
+      return res.status(400).json({
+        message: `axes must include numeric values for: ${READINESS_AXES.join(', ')}`,
+      });
+    }
+
+    const overall =
+      req.body?.overall === undefined ? computeOverallReadiness(axes) : Math.min(100, Math.max(0, Math.round(Number(req.body.overall) || 0)));
+    const day = dayKey();
+
+    const profile = await Profile.findOneAndUpdate(
+      { userId },
+      {
+        $pull: { readiness_snapshots: { day } },
+        $push: { readiness_snapshots: { $each: [{ day, capturedAt: new Date(), overall, axes }], $position: 0 } },
+        $set: { readiness_score: overall },
+      },
+      { upsert: true, new: true }
+    );
+
+    const snapshots = trimSnapshots(profile?.readiness_snapshots || [], SNAPSHOT_LIMIT);
+
+    // Persist the trim so the array cannot grow unbounded.
+    if (snapshots.length !== (profile?.readiness_snapshots?.length ?? 0)) {
+      await Profile.updateOne({ userId }, { $set: { readiness_snapshots: snapshots } });
+    }
+
+    return res.status(200).json({
+      message: 'Readiness snapshot recorded',
+      data: {
+        history: toTrendSeries(snapshots),
+        benchmark: getRoleBenchmark(profile?.target_role || ''),
+        target_role: profile?.target_role || '',
+        overall,
+      },
+    });
+  } catch (error) {
+    console.error('Error recording readiness snapshot:', error.message);
+    return res.status(500).json({ message: 'Error recording readiness snapshot', details: error.message });
   }
 };
 

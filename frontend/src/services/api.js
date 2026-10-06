@@ -127,6 +127,17 @@ export const fetchPublicProfile = async (username) => {
   }
 };
 
+// ---------- Readiness Radar Telemetry (5-axis + history) ----------
+export const fetchReadinessTelemetry = async () => {
+  const res = await api.get('/profile/readiness');
+  return res.data?.data || { history: [], benchmark: null, target_role: '' };
+};
+
+export const recordReadinessSnapshot = async (axes, overall) => {
+  const res = await api.post('/profile/readiness/snapshot', { axes, overall });
+  return res.data?.data || null;
+};
+
 // ---------- Application Tracker APIs (MongoDB) ----------
 export const fetchApplicationsFromDB = async () => {
   try {
