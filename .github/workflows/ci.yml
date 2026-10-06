@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref instead of queueing them.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (lint + syntax)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check every source file
+        run: npm run check:syntax
+
+      - name: Lint
+        run: npm run lint
+
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # --max-warnings 0 is already set in the lint script, so warnings fail here too.
+      - name: Lint
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Ensure build output is not committed
+        run: |
+          if git status --porcelain -- dist | grep -q .; then
+            echo "::error::frontend/dist changed during build - it must stay out of version control"
+            git status --porcelain -- dist
+            exit 1
+          fi
+
+  ai-service:
+    name: AI Service (syntax + import graph)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Deliberately does not `pip install -r requirements.txt`: sentence-transformers
+      # pulls in torch (~2 GB) and the RAG service imports it at module scope, which
+      # would make every push pay for a multi-minute install. A byte-compile catches
+      # every syntax error, and the import-graph check below catches renames and
+      # moves without needing the third-party packages present.
+      - name: Byte-compile all sources
+        run: python -m compileall -q app
+
+      - name: Verify app.* imports resolve to real modules
+        run: python .github/verify_python_imports.py app
+
+      - name: Verify requirements.txt is complete
+        run: |
+          python - <<'PY'
+          import ast, pathlib, re, sys
+
+          # Distributions whose import name differs from the distribution name.
+          # Undeclared here, python-docx / PyGithub / google-generativeai would be
+          # reported as missing even though they are pinned in requirements.txt.
+          ALIASES = {
+              'python_docx': 'docx',
+              'python_dotenv': 'dotenv',
+              'pygithub': 'github',
+              'google_generativeai': 'google',
+              'opencv_python': 'cv2',
+              'pillow': 'PIL',
+              'beautifulsoup4': 'bs4',
+              'protobuf': 'google.protobuf',
+          }
+
+          declared = set()
+          for line in pathlib.Path('requirements.txt').read_text().splitlines():
+              line = line.split('#', 1)[0].strip()
+              if not line:
+                  continue
+              name = re.split(r'[<>=!~\[]', line, 1)[0].strip().lower().replace('-', '_')
+              declared.add(name)
+              if name in ALIASES:
+                  declared.add(ALIASES[name].lower())
+
+          imported = set()
+          for path in pathlib.Path('app').rglob('*.py'):
+              tree = ast.parse(path.read_text(encoding='utf-8'))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      imported.update(a.name.split('.')[0] for a in node.names)
+                  elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                      imported.add(node.module.split('.')[0])
+
+          stdlib = set(sys.stdlib_module_names)
+          ignore = {'app'} | {s.lower() for s in stdlib}
+          missing = sorted(
+              m for m in imported
+              if m not in ignore and m.lower() not in declared and m.lower() not in ignore
+          )
+
+          if missing:
+              print('::error::imported but not declared in requirements.txt: ' + ', '.join(missing))
+              sys.exit(1)
+          print(f'OK - all {len(imported - ignore)} third-party imports are pinned in requirements.txt')
+          PY
