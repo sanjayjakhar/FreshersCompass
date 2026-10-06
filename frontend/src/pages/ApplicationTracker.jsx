@@ -3,7 +3,7 @@ import {
   CheckSquare, Plus, Building2, Calendar, MapPin,
   ChevronRight, X, ArrowRight, ExternalLink, Trash2, Loader2, Search,
   Sparkles, RotateCcw, LayoutGrid, List, Download, FileSpreadsheet, FileJson,
-  GripVertical
+  GripVertical, CalendarPlus, Clock, AlertCircle
 } from 'lucide-react';
 import {
   fetchApplicationsFromDB,
@@ -33,8 +33,106 @@ export default function ApplicationTracker() {
   const [newLocation, setNewLocation] = useState('Remote');
   const [newStatus, setNewStatus] = useState('applied');
   const [newJobUrl, setNewJobUrl] = useState('');
+  const [newDeadline, setNewDeadline] = useState('');
+  const [newInterviewDate, setNewInterviewDate] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const getUrgencyBadge = useCallback((app) => {
+    const rawDate = app.deadlineDate || app.deadline || app.interviewDate || app.interviewDateTime;
+    if (!rawDate) return null;
+
+    const targetDate = new Date(rawDate);
+    if (isNaN(targetDate.getTime())) return null;
+
+    const now = new Date();
+    const diffHours = (targetDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const isInterview = Boolean(app.interviewDate || app.interviewDateTime);
+    const prefix = isInterview ? 'Interview' : 'Deadline';
+
+    if (diffHours < 0) {
+      return {
+        label: `${prefix}: Past`,
+        className: 'bg-red-500/10 text-red-600 border border-red-200/70',
+        isUrgent: false,
+      };
+    }
+    if (diffHours <= 24) {
+      return {
+        label: `${prefix}: < 24h!`,
+        className: 'bg-red-500/15 text-red-700 border border-red-300 font-bold animate-pulse',
+        isUrgent: true,
+      };
+    }
+    if (diffHours <= 72) {
+      return {
+        label: `${prefix}: < 3 days`,
+        className: 'bg-amber-500/15 text-amber-700 border border-amber-300 font-semibold',
+        isUrgent: true,
+      };
+    }
+    return {
+      label: `${prefix}: ${rawDate}`,
+      className: 'bg-slate-100 text-slate-700 border border-slate-200',
+      isUrgent: false,
+    };
+  }, []);
+
+  const downloadICS = useCallback((app) => {
+    const rawDate = app.interviewDate || app.interviewDateTime || app.deadlineDate || app.deadline;
+    const eventDate = rawDate ? new Date(rawDate) : new Date(Date.now() + 86400000);
+    const isInterview = Boolean(app.interviewDate || app.interviewDateTime);
+    const title = `${isInterview ? 'Interview Round' : 'Application Deadline'}: ${app.role} at ${app.company}`;
+    const description = `FreshersCompass Application Tracker\nCompany: ${app.company}\nRole: ${app.role}\nLocation: ${app.location || 'Remote'}\nStatus: ${app.status}\nMatch Score: ${app.matchScore || 85}%`;
+
+    const formatICS = (d) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const start = formatICS(eventDate);
+    const end = formatICS(new Date(eventDate.getTime() + 60 * 60 * 1000));
+
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//FreshersCompass//Career Pipeline//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:fc-${app._id || app.id || Date.now()}@fresherscompass.local`,
+      `DTSTAMP:${formatICS(new Date())}`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${title}`,
+      `DESCRIPTION:${description.replace(/\n/g, '\\n')}`,
+      `LOCATION:${app.location || 'Remote / Online'}`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${app.company.replace(/[^a-zA-Z0-9]/g, '_')}_interview.ics`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const openGoogleCalendar = useCallback((app) => {
+    const rawDate = app.interviewDate || app.interviewDateTime || app.deadlineDate || app.deadline;
+    const eventDate = rawDate ? new Date(rawDate) : new Date(Date.now() + 86400000);
+    const isInterview = Boolean(app.interviewDate || app.interviewDateTime);
+    const title = encodeURIComponent(`${isInterview ? 'Interview' : 'Application Deadline'}: ${app.role} at ${app.company}`);
+    const details = encodeURIComponent(`FreshersCompass Career Pipeline\nRole: ${app.role}\nCompany: ${app.company}\nLocation: ${app.location || 'Remote'}`);
+    const loc = encodeURIComponent(app.location || 'Remote / Online');
+
+    const formatGCal = (d) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const start = formatGCal(eventDate);
+    const end = formatGCal(new Date(eventDate.getTime() + 60 * 60 * 1000));
+
+    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${loc}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, []);
   const loadApplications = async () => {
     try {
       setLoading(true);
@@ -69,6 +167,10 @@ export default function ApplicationTracker() {
         status: newStatus,
         jobUrl: newJobUrl.trim(),
         appliedDate: new Date().toISOString().split('T')[0],
+        deadlineDate: newDeadline.trim(),
+        deadline: newDeadline.trim(),
+        interviewDate: newInterviewDate.trim(),
+        interviewDateTime: newInterviewDate.trim(),
         matchScore: Math.floor(Math.random() * 15) + 82, // realistic match score 82-96
       });
 
@@ -82,7 +184,10 @@ export default function ApplicationTracker() {
       setNewCompany('');
       setNewRole('');
       setNewLocation('Remote');
+      setNewStatus('applied');
       setNewJobUrl('');
+      setNewDeadline('');
+      setNewInterviewDate('');
       setShowAddModal(false);
     } catch (err) {
       console.error('Failed to create application in MongoDB:', err);
@@ -463,6 +568,7 @@ export default function ApplicationTracker() {
                   {colApps.map((app) => {
                     const appId = app._id || app.id;
                     const isDragging = draggedAppId === appId;
+                    const urgency = getUrgencyBadge(app);
 
                     return (
                       <div
@@ -487,22 +593,52 @@ export default function ApplicationTracker() {
                           </span>
                         </div>
 
+                        {/* Urgency Badge if deadline or interview is set */}
+                        {urgency && (
+                          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] ${urgency.className}`}>
+                            {urgency.isUrgent ? (
+                              <AlertCircle className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <Clock className="h-3 w-3 shrink-0" />
+                            )}
+                            <span className="truncate">{urgency.label}</span>
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between text-[10px] text-text-muted">
                           <div className="flex items-center gap-1 truncate">
                             <MapPin className="h-3 w-3 text-text-muted shrink-0" aria-hidden="true" />
                             <span className="truncate">{app.location || 'Remote'}</span>
                           </div>
-                          {app.jobUrl && (
-                            <a
-                              href={app.jobUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              title="Open original job posting"
-                              className="text-primary hover:underline inline-flex items-center gap-0.5"
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {app.jobUrl && (
+                              <a
+                                href={app.jobUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Open original job posting"
+                                className="text-primary hover:underline inline-flex items-center gap-0.5 p-1"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                            {/* 1-Click Calendar Sync */}
+                            <button
+                              onClick={() => downloadICS(app)}
+                              title="Download iCal (.ics) Calendar Invite"
+                              className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface transition-colors"
                             >
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          )}
+                              <CalendarPlus className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => openGoogleCalendar(app)}
+                              title="Add event to Google Calendar"
+                              className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+                            >
+                              +GCal
+                            </button>
+                          </div>
                         </div>
 
                         <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
@@ -721,6 +857,27 @@ export default function ApplicationTracker() {
                   <option value="offer">Offer Received</option>
                   <option value="rejected">Archived / Rejected</option>
                 </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-text-dark block mb-1">OA / App Deadline</label>
+                  <input
+                    type="date"
+                    value={newDeadline}
+                    onChange={(e) => setNewDeadline(e.target.value)}
+                    className="w-full px-3 py-2 bg-white rounded-xl border border-border text-xs text-text-dark focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-text-dark block mb-1">Interview Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={newInterviewDate}
+                    onChange={(e) => setNewInterviewDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white rounded-xl border border-border text-xs text-text-dark focus:outline-none focus:border-primary"
+                  />
+                </div>
               </div>
 
               <div className="pt-3 flex items-center justify-end gap-2 border-t border-border">

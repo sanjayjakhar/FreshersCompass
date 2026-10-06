@@ -114,7 +114,20 @@ export const resetApplications = async (req, res) => {
 export const createApplication = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
-    const { company, role, location, status, matchScore, appliedDate, notes, jobUrl } = req.body;
+    const {
+      company,
+      role,
+      location,
+      status,
+      matchScore,
+      appliedDate,
+      deadlineDate,
+      deadline,
+      interviewDate,
+      interviewDateTime,
+      notes,
+      jobUrl,
+    } = req.body;
 
 
     if (!company || !role) {
@@ -129,6 +142,10 @@ export const createApplication = async (req, res) => {
       status: status || 'applied',
       matchScore: matchScore || 85,
       appliedDate: appliedDate || new Date().toISOString().split('T')[0],
+      deadlineDate: deadlineDate || deadline || '',
+      deadline: deadline || deadlineDate || '',
+      interviewDate: interviewDate || interviewDateTime || '',
+      interviewDateTime: interviewDateTime || interviewDate || '',
       notes: notes || '',
       jobUrl: jobUrl || '',
     });
@@ -155,7 +172,20 @@ export const updateApplication = async (req, res) => {
     const userId = getEffectiveUserId(req);
 
     // Whitelist modifiable fields to prevent userId tampering or prototype pollution
-    const allowedFields = ['company', 'role', 'location', 'status', 'matchScore', 'appliedDate', 'notes', 'jobUrl'];
+    const allowedFields = [
+      'company',
+      'role',
+      'location',
+      'status',
+      'matchScore',
+      'appliedDate',
+      'notes',
+      'jobUrl',
+      'deadlineDate',
+      'deadline',
+      'interviewDate',
+      'interviewDateTime',
+    ];
     const sanitizedUpdate = {};
     for (const key of allowedFields) {
       if (req.body[key] !== undefined) {
