@@ -1,15 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Mic, MicOff, Volume2, VolumeX, Bot, ArrowRight, CheckCircle2, AlertTriangle, RotateCcw,
-  Sparkles, Award, Clock, HelpCircle, ChevronRight, Zap, Target
+  Sparkles, Award, Clock, HelpCircle, ChevronRight, Zap, Target, Timer
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { evaluateInterviewSession, updateProfileInDB } from '../services/api';
 import MicWaveform from '../components/MicWaveform';
 import useMicMeter from '../hooks/useMicMeter';
+import TimerGauge from '../components/TimerGauge';
+import useCountdown from '../hooks/useCountdown';
 
 /** Silence (ms) after which the answer is treated as finished. */
 const SILENCE_TIMEOUT_MS = 3500;
+/** Simulated pressure mode budget per question, matching real async screeners. */
+const PRESSURE_DURATION_MS = 120000;
+/** Default budget offered in practice mode. */
+const PRACTICE_DURATION_MS = 180000;
 
 export default function AIInterview() {
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -20,6 +26,12 @@ export default function AIInterview() {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState(null);
   const [evalError, setEvalError] = useState(null);
+
+  // Timer mode: 'practice' (pausable) vs 'pressure' (auto-submit on expiry)
+  const [timerMode, setTimerMode] = useState('practice');
+  const [timerBudgetMs, setTimerBudgetMs] = useState(PRACTICE_DURATION_MS);
+  const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const questionStartedAtRef = useRef(null);
 
   // Speech-to-Text & Text-to-Speech state
   const [isListening, setIsListening] = useState(false);
@@ -237,9 +249,21 @@ export default function AIInterview() {
     setIsCompleted(false);
     setEvaluationResult(null);
     setEvalError(null);
+    setAutoSubmitted(false);
   };
 
-  const handleSubmitAnswer = async () => {
+  /**
+   * Records how long the candidate actually spent, so the evaluator can score
+   * pacing and conciseness instead of guessing from answer length.
+   */
+  const elapsedForAnswer = () => {
+    const startedAt = questionStartedAtRef.current;
+    if (!startedAt) return 0;
+    return Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  };
+
+  const handleSubmitAnswer = async (options = {}) => {
+    const { auto = false } = options;
     if (!userAnswer.trim()) return;
 
     if (recognitionRef.current) {
@@ -254,9 +278,21 @@ export default function AIInterview() {
     setIsListening(false);
     setIsSpeaking(false);
 
-    const nextAnswers = [...answers, { question: questions[currentQuestionIndex], answer: userAnswer }];
+    const timeSpentSeconds = elapsedForAnswer();
+
+    const nextAnswers = [
+      ...answers,
+      {
+        question: questions[currentQuestionIndex],
+        answer: userAnswer,
+        time_spent_seconds: timeSpentSeconds,
+        budget_seconds: Math.round(timerBudgetMs / 1000),
+        auto_submitted: auto,
+      },
+    ];
     setAnswers(nextAnswers);
     setUserAnswer('');
+    setAutoSubmitted(false);
 
     if (currentQuestionIndex + 1 < questions.length) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
@@ -270,6 +306,9 @@ export default function AIInterview() {
         question: item.question.question,
         expected_points: item.question.expectedPoints,
         answer: item.answer,
+        time_spent_seconds: item.time_spent_seconds,
+        budget_seconds: item.budget_seconds,
+        auto_submitted: item.auto_submitted,
       }));
 
       let finalScore = 84;
@@ -287,6 +326,8 @@ export default function AIInterview() {
           technical_clarity: 86,
           system_design_depth: 82,
           behavioral_impact: 85,
+          // No pacing measurement is possible on the fallback path.
+          pacing_score: null,
           feedback_summary: 'Comprehensive analysis of responses completed with solid architectural foundation and clear communication style.',
           strong_points: [
             'Articulate explanation of token lifecycle and state handling',
@@ -319,6 +360,41 @@ export default function AIInterview() {
   };
 
   const progressPercent = Math.round(((currentQuestionIndex + 1) / questions.length) * 100);
+
+  /**
+   * Pressure mode auto-submits when the budget runs out. In practice mode the
+   * timer only warns, because forcing a cut-off while someone is still
+   * thinking is the opposite of what practice mode is for.
+   */
+  const handleExpire = useCallback(() => {
+    if (timerMode !== 'pressure') return;
+    if (!userAnswer.trim()) return;
+    setAutoSubmitted(true);
+    handleSubmitAnswer({ auto: true });
+  }, [timerMode, userAnswer, handleSubmitAnswer]);
+
+  const timer = useCountdown({
+    durationMs: timerBudgetMs,
+    onExpire: handleExpire,
+  });
+
+  // (Re)arm the budget and the stopwatch whenever the question changes.
+  // `start` is destructured rather than read off `timer` because the hook
+  // returns a fresh object each render, which would re-arm on every render.
+  const { start: startTimer } = timer;
+  useEffect(() => {
+    if (!sessionStarted || isCompleted) return;
+    questionStartedAtRef.current = Date.now();
+    setAutoSubmitted(false);
+    startTimer(timerBudgetMs);
+  }, [currentQuestionIndex, sessionStarted, isCompleted, timerBudgetMs, startTimer]);
+
+  const TIMER_PRESETS = [
+    { label: '1 min', ms: 60000 },
+    { label: '2 min', ms: 120000 },
+    { label: '3 min', ms: 180000 },
+    { label: '5 min', ms: 300000 },
+  ];
 
   return (
     <div className="space-y-8 animate-fade-up">
@@ -385,6 +461,83 @@ export default function AIInterview() {
             </p>
           </div>
 
+          {/* Timer Mode Configuration (#41) */}
+          <div className="text-left max-w-lg mx-auto space-y-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted inline-flex items-center gap-1.5">
+              <Timer className="h-3 w-3" />
+              Timing Mode
+            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setTimerMode('practice');
+                  setTimerBudgetMs(PRACTICE_DURATION_MS);
+                }}
+                aria-pressed={timerMode === 'practice'}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  timerMode === 'practice'
+                    ? 'bg-primary/5 border-primary/40 shadow-xs'
+                    : 'bg-white border-border hover:border-primary/30'
+                }`}
+              >
+                <span className="flex items-center gap-1.5 text-xs font-bold text-text-dark">
+                  <Clock className="h-3.5 w-3.5 text-primary" />
+                  Untimed Practice Mode
+                </span>
+                <span className="block text-[11px] text-text-body mt-1 leading-relaxed">
+                  A visible countdown you can pause or reset. Nothing is ever submitted for you.
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTimerMode('pressure');
+                  setTimerBudgetMs(PRESSURE_DURATION_MS);
+                }}
+                aria-pressed={timerMode === 'pressure'}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  timerMode === 'pressure'
+                    ? 'bg-accent/5 border-accent/40 shadow-xs'
+                    : 'bg-white border-border hover:border-accent/30'
+                }`}
+              >
+                <span className="flex items-center gap-1.5 text-xs font-bold text-text-dark">
+                  <Zap className="h-3.5 w-3.5 text-accent" />
+                  Simulated Pressure Mode
+                </span>
+                <span className="block text-[11px] text-text-body mt-1 leading-relaxed">
+                  Hard deadline per question. Your answer is submitted automatically when time expires.
+                </span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <span className="text-[11px] font-semibold text-text-body">Time per question:</span>
+              {TIMER_PRESETS.map((preset) => (
+                <button
+                  key={preset.ms}
+                  type="button"
+                  onClick={() => setTimerBudgetMs(preset.ms)}
+                  aria-pressed={timerBudgetMs === preset.ms}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
+                    timerBudgetMs === preset.ms
+                      ? 'bg-primary/10 border-primary/40 text-primary'
+                      : 'bg-white border-border text-text-muted hover:text-text-dark'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <span className="text-[10px] text-text-muted">
+                {Math.floor(timerBudgetMs / 60000)} min budget
+                {timerMode === 'pressure' ? ' · auto-submit on' : ' · pausable'}
+              </span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left max-w-lg mx-auto text-xs text-text-dark">
             <div className="bg-white p-3 rounded-xl border border-border flex items-center gap-2.5">
               <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
@@ -444,8 +597,9 @@ export default function AIInterview() {
             </div>
           </div>
 
-          {/* Metric Sub-scores */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Metric Sub-scores. Pacing is omitted rather than faked when the evaluator
+              could not measure it (null on the offline fallback path). */}
+          <div className={`grid gap-3 ${evaluationResult.pacing_score != null ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
             <div className="bg-white p-3.5 rounded-xl border border-border text-center">
               <span className="text-xs text-text-muted">Technical Clarity</span>
               <p className="text-lg font-bold text-primary font-mono mt-1">
@@ -464,7 +618,27 @@ export default function AIInterview() {
                 {evaluationResult.behavioral_impact || evaluationResult.overall_score}%
               </p>
             </div>
+            {evaluationResult.pacing_score != null && (
+              <div className="bg-white p-3.5 rounded-xl border border-border text-center">
+                <span className="text-xs text-text-muted">Pacing</span>
+                <p className="text-lg font-bold text-accent font-mono mt-1">
+                  {evaluationResult.pacing_score}%
+                </p>
+              </div>
+            )}
           </div>
+
+          {evaluationResult.time_management_summary && (
+            <div className="p-4 bg-accent/5 border border-accent/20 rounded-xl">
+              <span className="flex items-center gap-2 text-xs font-bold text-accent mb-1">
+                <Clock className="h-3.5 w-3.5" />
+                Time Management Feedback
+              </span>
+              <p className="text-[11px] text-text-body leading-relaxed">
+                {evaluationResult.time_management_summary}
+              </p>
+            </div>
+          )}
 
           {/* Strengths and Improvements */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -602,7 +776,47 @@ export default function AIInterview() {
             </div>
           )}
 
-          {/* User Answer Field with STT Microphone Toggle */}
+          {/* Countdown Gauge (#41) */}
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border bg-surface">
+              <TimerGauge
+                seconds={timer.seconds}
+                progress={timer.progress}
+                running={timer.running}
+                paused={!timer.running && !timer.expired}
+                totalSeconds={Math.round(timerBudgetMs / 1000)}
+                onToggle={timer.toggle}
+                onReset={() => timer.start(timerBudgetMs)}
+              />
+
+              <div className="text-right">
+                <p
+                  className={`text-[11px] font-bold ${
+                    timer.expired ? 'text-red-700' : 'text-text-dark'
+                  }`}
+                >
+                  {timer.expired
+                    ? 'Time expired'
+                    : `${timerMode === 'pressure' ? 'Pressure' : 'Practice'} mode`}
+                </p>
+                <p className="text-[10px] text-text-muted mt-0.5 leading-relaxed max-w-[15rem]">
+                  {timer.seconds <= 10 && timer.running
+                    ? 'Ten seconds left — wrap up your answer.'
+                    : timer.seconds <= 30 && timer.running
+                    ? 'Thirty seconds left.'
+                    : timerMode === 'pressure'
+                    ? 'Auto-submits when the budget runs out.'
+                    : 'Timer is advisory; you stay in control.'}
+                </p>
+              </div>
+            </div>
+
+            {autoSubmitted && (
+              <p className="text-[11px] font-semibold text-accent">
+                Answer auto-submitted when the timer expired.
+              </p>
+            )}
+
+            {/* User Answer Field with STT Microphone Toggle */}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <label className="text-xs font-bold text-text-dark block">
@@ -790,7 +1004,7 @@ export default function AIInterview() {
           {/* Single Coral Action Button (#D85A30) */}
           <div className="flex items-center justify-end">
             <button
-              onClick={handleSubmitAnswer}
+              onClick={() => handleSubmitAnswer()}
               disabled={!userAnswer.trim()}
               className="btn-accent text-xs font-bold px-6 py-3 disabled:opacity-50"
             >
