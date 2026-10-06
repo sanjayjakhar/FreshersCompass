@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/AppLayout';
 import PageSkeleton from './components/PageSkeleton';
+import OfflineBanner from './components/OfflineBanner';
 
 // Route-based code splitting (React.lazy) to minimize initial bundle size and accelerate FCP
 const LandingPage = lazy(() => import('./pages/LandingPage'));
@@ -20,8 +21,10 @@ const PublicPortfolio = lazy(() => import('./pages/PublicPortfolio'));
 
 function App() {
   return (
-    <Suspense fallback={<PageSkeleton />}>
-      <Routes>
+    <>
+      <OfflineBanner />
+      <Suspense fallback={<PageSkeleton />}>
+        <Routes>
         {/* Public Landing Page */}
         <Route path="/" element={<LandingPage />} />
 
@@ -121,6 +124,7 @@ function App() {
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Suspense>
+    </>
   );
 }
 
