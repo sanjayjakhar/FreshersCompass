@@ -48,6 +48,10 @@ const profileSchema = new mongoose.Schema(
       show_gpa: { type: Boolean, default: true },
       show_compensation: { type: Boolean, default: false },
     },
+    last_commit_hash: { type: String, default: '' },
+    last_commit_message: { type: String, default: '' },
+    last_synced_repo: { type: String, default: '' },
+    last_synced_at: { type: Date, default: null },
   },
   {
     timestamps: true,

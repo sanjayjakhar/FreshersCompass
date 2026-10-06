@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, Bell, Menu, Github, Sparkles, X, ArrowRight, Trash2 } from 'lucide-react';
+import { Search, Bell, Menu, Github, Sparkles, X, ArrowRight, Trash2, GitCommit, CheckCircle2, Radio } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { fetchProfileFromDB, updateProfileInDB, fetchLatestResume } from '../services/api';
+import { fetchProfileFromDB, updateProfileInDB, fetchLatestResume, fetchGitHubSyncStatus } from '../services/api';
 import useFocusTrap from '../hooks/useFocusTrap';
 
 export default function TopBar({ setMobileOpen }) {
   const navigate = useNavigate();
   const [showGithubModal, setShowGithubModal] = useState(false);
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+  const [syncTelemetry, setSyncTelemetry] = useState(null);
   const [githubUser, setGithubUser] = useState('');
   const [connectedUser, setConnectedUser] = useState('');
   const [resumeDetectedUser, setResumeDetectedUser] = useState('');
@@ -28,10 +30,14 @@ export default function TopBar({ setMobileOpen }) {
   useEffect(() => {
     const loadProfileData = async () => {
       try {
-        const [profile, resume] = await Promise.all([
+        const [profile, resume, syncStatus] = await Promise.all([
           fetchProfileFromDB(),
           fetchLatestResume(),
+          fetchGitHubSyncStatus(),
         ]);
+        if (syncStatus) {
+          setSyncTelemetry(syncStatus);
+        }
         if (profile?.github_username) {
           setConnectedUser(profile.github_username);
           setGithubUser(profile.github_username);
@@ -140,6 +146,20 @@ export default function TopBar({ setMobileOpen }) {
             <span>Gemini Flash</span>
           </div>
 
+          {/* Twin Webhook Synced Commit Indicator */}
+          {syncTelemetry?.lastCommitHash && (
+            <div
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-medium shadow-2xs"
+              title={`Git push synced: ${syncTelemetry.lastCommitMessage || ''} (Repo: ${syncTelemetry.lastSyncedRepo || 'Connected'})`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span>Twin synced:</span>
+              <code className="font-mono font-bold text-emerald-900 bg-white px-1.5 py-0.5 rounded border border-emerald-300">
+                {syncTelemetry.lastCommitHash}
+              </code>
+            </div>
+          )}
+
           {/* GitHub Sync Button */}
           <button
             onClick={() => {
@@ -166,14 +186,61 @@ export default function TopBar({ setMobileOpen }) {
           </button>
 
           {/* Notification Bell */}
-          <button
-            className="relative p-2 rounded-xl text-text-body hover:text-primary hover:bg-surface transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-            title="Notifications"
-            aria-label="Notifications"
-          >
-            <Bell className="h-4 w-4" aria-hidden="true" />
-            <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-accent" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowNotificationsDropdown((prev) => !prev)}
+              className="relative p-2 rounded-xl text-text-body hover:text-primary hover:bg-surface transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+              title="Notifications"
+              aria-label="Notifications"
+            >
+              <Bell className="h-4 w-4" aria-hidden="true" />
+              {syncTelemetry?.lastCommitHash && (
+                <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-accent" />
+              )}
+            </button>
+
+            {showNotificationsDropdown && (
+              <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl border border-border shadow-xl p-4 z-50 animate-fade-in space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-border">
+                  <h4 className="text-xs font-bold text-text-dark uppercase tracking-wider">
+                    Cockpit Notifications
+                  </h4>
+                  <button
+                    onClick={() => setShowNotificationsDropdown(false)}
+                    className="text-text-muted hover:text-text-dark text-xs p-1 rounded-md hover:bg-slate-100"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {syncTelemetry?.lastCommitHash ? (
+                  <div className="p-3 bg-emerald-50/80 rounded-xl border border-emerald-200 text-xs space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-800">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <span>Twin Synced with Git Push</span>
+                    </div>
+                    <p className="text-emerald-900 leading-snug">
+                      Twin synced with latest commit <code className="font-mono font-bold">{syncTelemetry.lastCommitHash}</code>
+                      {syncTelemetry.lastSyncedRepo && ` on ${syncTelemetry.lastSyncedRepo}`}.
+                    </p>
+                    {syncTelemetry.lastCommitMessage && (
+                      <p className="text-[11px] text-emerald-700 italic truncate">
+                        "{syncTelemetry.lastCommitMessage}"
+                      </p>
+                    )}
+                    <div className="pt-1 flex items-center justify-between text-[11px] text-emerald-800 border-t border-emerald-200 font-mono">
+                      <span>Velocity Telemetry:</span>
+                      <span className="font-bold">{syncTelemetry.velocity}/100</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-4 text-center text-xs text-text-muted">
+                    No new push telemetry. Connect GitHub or push a commit to auto-sync.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* User Avatar */}
           <div className="flex items-center gap-2 pl-2 border-l border-border">

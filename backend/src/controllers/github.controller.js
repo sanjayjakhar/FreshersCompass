@@ -1,5 +1,8 @@
 import axios from "axios";
+import crypto from "crypto";
 import cacheService from "../services/cache.service.js";
+import Profile from "../models/Profile.model.js";
+import { getEffectiveUserId } from "../middleware/auth.middleware.js";
 
 const getAiServiceHeaders = () => ({
   "Content-Type": "application/json",
@@ -666,6 +669,207 @@ export const getIndexStatus = async (req, res) => {
     return res.status(statusCode).json({
       message: "Failed to poll indexing status",
       details: detail,
+    });
+  }
+};
+
+/**
+ * Verify GitHub webhook HMAC SHA-256 signature
+ */
+export const verifyGitHubWebhookSignature = (req) => {
+  const secret = process.env.GITHUB_WEBHOOK_SECRET || "fc_github_webhook_secret_default";
+  const signature = req.headers["x-hub-signature-256"];
+  if (!signature) return false;
+
+  const payload = req.rawBody || JSON.stringify(req.body);
+  const hmac = crypto.createHmac("sha256", secret);
+  const digest = `sha256=${hmac.update(payload).digest("hex")}`;
+
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * POST /api/github/webhook
+ * Ingests GitHub webhooks, verifies HMAC signature, updates candidate velocity telemetry,
+ * and triggers background AST re-indexing if key files were modified.
+ */
+export const handleGitHubWebhook = async (req, res) => {
+  try {
+    // 1. Verify HMAC SHA-256 signature
+    const isValid = verifyGitHubWebhookSignature(req);
+    if (!isValid) {
+      return res.status(401).json({
+        message: "Invalid or missing webhook signature (X-Hub-Signature-256)",
+      });
+    }
+
+    const event = req.headers["x-github-event"] || "push";
+
+    // Handle Ping event
+    if (event === "ping") {
+      return res.status(200).json({
+        message: "GitHub webhook successfully verified and active",
+        zen: req.body?.zen,
+        hook_id: req.body?.hook_id,
+      });
+    }
+
+    // Handle Push event
+    if (event === "push") {
+      const payload = req.body || {};
+      const repoName = payload.repository?.name || "unknown-repo";
+      const repoUrl = payload.repository?.html_url || payload.repository?.clone_url || "";
+      const sender = (
+        payload.pusher?.name ||
+        payload.sender?.login ||
+        payload.repository?.owner?.name ||
+        payload.repository?.owner?.login ||
+        ""
+      ).trim();
+
+      const commits = payload.commits || [];
+      const latestCommit = payload.head_commit || commits[commits.length - 1] || {};
+      const latestCommitHash = payload.after || latestCommit.id || "";
+      const shortHash = latestCommitHash ? latestCommitHash.slice(0, 7) : "HEAD";
+      const latestCommitMessage = latestCommit.message || `Pushed ${commits.length} commit(s) to ${repoName}`;
+
+      // Find candidate profile matching GitHub username or active user
+      let profile = null;
+      if (sender) {
+        profile = await Profile.findOne({
+          github_username: new RegExp(`^${sender}$`, "i"),
+        });
+      }
+      if (!profile) {
+        // Fallback to latest updated profile
+        profile = await Profile.findOne().sort({ updatedAt: -1 });
+      }
+
+      if (profile) {
+        // Calculate velocity increment based on commit batch
+        const commitCount = Math.max(1, commits.length);
+        const currentVelocity = profile.competency_scores?.velocity || 50;
+        const newVelocity = Math.min(100, currentVelocity + commitCount * 5);
+
+        profile.competency_scores = {
+          resume: profile.competency_scores?.resume || 70,
+          code: profile.competency_scores?.code || 70,
+          interview: profile.competency_scores?.interview || 70,
+          roadmap: profile.competency_scores?.roadmap || 70,
+          velocity: newVelocity,
+        };
+
+        // Recalculate composite readiness score
+        const scores = Object.values(profile.competency_scores);
+        profile.readiness_score = Math.round(
+          scores.reduce((a, b) => a + b, 0) / scores.length
+        );
+
+        profile.last_commit_hash = shortHash;
+        profile.last_commit_message = latestCommitMessage;
+        profile.last_synced_repo = repoName;
+        profile.last_synced_at = new Date();
+
+        await profile.save();
+      }
+
+      // Check if key architecture files were touched across commits
+      const keyFilePatterns = [
+        "package.json",
+        "requirements.txt",
+        "pom.xml",
+        "go.mod",
+        "cargo.toml",
+        "server.js",
+        "main.py",
+        "app.py",
+        "index.js",
+      ];
+
+      const touchedFiles = [];
+      for (const c of commits) {
+        if (Array.isArray(c.added)) touchedFiles.push(...c.added);
+        if (Array.isArray(c.modified)) touchedFiles.push(...c.modified);
+        if (Array.isArray(c.removed)) touchedFiles.push(...c.removed);
+      }
+
+      const keyFilesTouched = touchedFiles.some((file) =>
+        keyFilePatterns.some((pattern) => file.toLowerCase().endsWith(pattern))
+      );
+
+      // Trigger background AST re-indexing if key files were modified
+      if (keyFilesTouched && repoUrl) {
+        const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+        axios
+          .post(
+            `${aiServiceUrl}/github/analyze-async`,
+            { repo_url: repoUrl },
+            { headers: getAiServiceHeaders(), timeout: 10000 }
+          )
+          .catch((err) => {
+            console.log("Background webhook re-indexing kick error (non-fatal):", err.message);
+          });
+      }
+
+      return res.status(200).json({
+        message: "Push webhook processed successfully. Candidate twin profile updated.",
+        synced: true,
+        repo: repoName,
+        commit: shortHash,
+        commitMessage: latestCommitMessage,
+        velocity: profile?.competency_scores?.velocity || null,
+        reindexingTriggered: keyFilesTouched,
+      });
+    }
+
+    return res.status(200).json({
+      message: `Ignored unhandled GitHub event: ${event}`,
+    });
+  } catch (error) {
+    console.error("Error processing GitHub webhook:", error.message);
+    return res.status(500).json({
+      message: "Internal server error processing webhook",
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/github/sync-status
+ * Returns latest telemetry sync status from GitHub webhook pushes
+ */
+export const getLatestWebhookSync = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    let profile = await Profile.findOne({ userId });
+    if (!profile) {
+      profile = await Profile.findOne().sort({ updatedAt: -1 });
+    }
+
+    if (!profile) {
+      return res.status(200).json({
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      data: {
+        lastSyncedAt: profile.last_synced_at,
+        lastCommitHash: profile.last_commit_hash,
+        lastCommitMessage: profile.last_commit_message,
+        lastSyncedRepo: profile.last_synced_repo,
+        velocity: profile.competency_scores?.velocity || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching sync status:", error.message);
+    return res.status(500).json({
+      message: "Failed to fetch sync status",
+      details: error.message,
     });
   }
 };

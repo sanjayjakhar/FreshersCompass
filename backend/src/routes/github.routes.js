@@ -13,9 +13,15 @@ import {
   getRepositoryCommits,
   generateProfileReadme,
   generateProjectReadme,
+  handleGitHubWebhook,
+  getLatestWebhookSync,
 } from "../controllers/github.controller.js";
 
 const router = express.Router();
+
+// GitHub Webhook listener (HMAC SHA-256 verified)
+router.post("/webhook", handleGitHubWebhook);
+router.get("/sync-status", getLatestWebhookSync);
 
 router.post("/analyze", aiInferenceLimiter, analyzeRepository);
 router.post("/analyze-async", aiInferenceLimiter, analyzeRepositoryAsync);

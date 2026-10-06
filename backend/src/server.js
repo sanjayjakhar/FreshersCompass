@@ -64,11 +64,27 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "X-Hub-Signature-256",
+      "X-GitHub-Event",
+      "X-GitHub-Delivery",
+    ],
   })
 );
 
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf, encoding) => {
+      if (buf && buf.length) {
+        req.rawBody = buf.toString(encoding || "utf8");
+      }
+    },
+  })
+);
 app.use(sanitizeInput);
 app.use(cookieParser());
 app.use(sessionIsolationMiddleware);
