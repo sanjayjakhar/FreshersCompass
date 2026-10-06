@@ -641,7 +641,12 @@ export default function AIInterview() {
         </div>
       ) : isEvaluating ? (
         /* Evaluation Loading */
-        <div className="bg-surface rounded-card border border-border p-16 text-center max-w-md mx-auto shadow-2xs space-y-4">
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="bg-surface rounded-card border border-border p-16 text-center max-w-md mx-auto shadow-2xs space-y-4"
+        >
           <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center mx-auto animate-pulse">
             <Sparkles className="h-6 w-6" />
           </div>
@@ -652,7 +657,12 @@ export default function AIInterview() {
         </div>
       ) : isCompleted && evaluationResult ? (
         /* Final Dynamic Evaluation Report Screen */
-        <div className="bg-surface rounded-card border border-border p-8 shadow-2xs space-y-6 max-w-3xl mx-auto">
+        <div
+          role="region"
+          aria-label="Interview evaluation and feedback report"
+          aria-live="polite"
+          className="bg-surface rounded-card border border-border p-8 shadow-2xs space-y-6 max-w-3xl mx-auto"
+        >
           <div className="flex flex-col sm:flex-row items-center justify-between pb-6 border-b border-border gap-4">
             <div>
               <div className="flex items-center gap-2">
@@ -938,8 +948,18 @@ export default function AIInterview() {
 
             {/* User Answer Field with STT Microphone Toggle */}
           <div className="space-y-2">
+            {/* Screen reader live announcement for voice dictation */}
+            <div
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="sr-only"
+            >
+              {isListening ? 'Microphone active, listening for speech input.' : 'Microphone idle.'}
+            </div>
+
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <label className="text-xs font-bold text-text-dark block">
+              <label htmlFor="interview-user-answer" className="text-xs font-bold text-text-dark block">
                 Your Answer / Explanation:
               </label>
 
@@ -966,14 +986,16 @@ export default function AIInterview() {
                 <button
                   type="button"
                   onClick={toggleListening}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                  aria-pressed={isListening}
+                  aria-label={isListening ? 'Stop microphone voice dictation' : 'Start microphone voice dictation'}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
                     isListening
                       ? 'bg-red-500/10 border-red-500/40 text-red-600 shadow-xs animate-pulse'
                       : 'bg-white border-border text-text-muted hover:text-text-dark hover:border-primary/40'
                   }`}
                   title={isListening ? 'Stop listening' : 'Start voice dictation'}
                 >
-                  {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                  {isListening ? <MicOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Mic className="h-3.5 w-3.5" aria-hidden="true" />}
                   <span>{isListening ? 'Listening (Click to Stop)...' : 'Answer with Voice (Speech-to-Text)'}</span>
                 </button>
               </div>
@@ -1109,12 +1131,14 @@ export default function AIInterview() {
             )}
 
             <textarea
+              id="interview-user-answer"
               rows={6}
               value={userAnswer}
               onChange={(e) => {
                 setUserAnswer(e.target.value);
                 if (e.target.value.trim()) setSilencePrompt(null);
               }}
+              aria-label="Your technical interview answer or explanation"
               placeholder="Speak using the voice button above, or type your technical breakdown here..."
               className="w-full p-4 bg-white rounded-xl border border-border text-xs text-text-dark focus:outline-none focus:border-primary leading-relaxed font-sans"
               autoFocus

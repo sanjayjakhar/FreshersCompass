@@ -14,9 +14,11 @@ import {
   resetApplicationsInDB
 } from '../services/api';
 import useDebounce from '../hooks/useDebounce';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 export default function ApplicationTracker() {
   const [showAddModal, setShowAddModal] = useState(false);
+  const modalRef = useFocusTrap(showAddModal, () => setShowAddModal(false));
   const [loading, setLoading] = useState(true);
   const [applications, setApplications] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -786,16 +788,22 @@ export default function ApplicationTracker() {
 
       {/* Add Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="bg-surface rounded-card border border-border p-6 max-w-md w-full shadow-lg relative">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-app-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
+        >
+          <div ref={modalRef} className="bg-surface rounded-card border border-border p-6 max-w-md w-full shadow-lg relative">
             <button
               onClick={() => setShowAddModal(false)}
-              className="absolute top-4 right-4 text-text-muted hover:text-text-dark p-1 rounded-lg"
+              aria-label="Close dialog"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-dark p-1 rounded-lg cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
 
-            <h3 className="text-base font-bold text-text-dark mb-4">Track New Job Application</h3>
+            <h3 id="add-app-modal-title" className="text-base font-bold text-text-dark mb-4">Track New Job Application</h3>
 
             <form onSubmit={handleAdd} className="space-y-4">
               <div>

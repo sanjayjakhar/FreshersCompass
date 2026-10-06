@@ -46,6 +46,16 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
     return () => window.removeEventListener('freshercompass_profile_updated', handleSync);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && mobileOpen) {
+        setMobileOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [mobileOpen, setMobileOpen]);
+
   const navItems = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: null },
     { to: '/career-twin', label: 'AI Career Twin', icon: Sparkles, badge: 'AI' },
@@ -65,6 +75,8 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
       {/* Mobile Backdrop */}
       {mobileOpen && (
         <div
+          role="presentation"
+          aria-hidden="true"
           className="fixed inset-0 bg-black/30 backdrop-blur-xs z-40 lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -72,6 +84,7 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
 
       {/* Sidebar Container */}
       <aside
+        aria-label="Cockpit Navigation"
         className={`fixed top-0 bottom-0 left-0 z-40 bg-surface border-r border-border transition-all duration-300 flex flex-col ${
           collapsed ? 'w-20' : 'w-64'
         } ${
@@ -102,7 +115,8 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
 
           <button
             onClick={() => setCollapsed(!collapsed)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar navigation' : 'Collapse sidebar navigation'}
+            aria-expanded={!collapsed}
             className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-primary hover:bg-surface-muted transition-colors min-h-[44px] min-w-[44px]"
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
@@ -111,7 +125,7 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
         </div>
 
         {/* Navigation List */}
-        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        <nav aria-label="Main Navigation" className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.to;
@@ -165,7 +179,7 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
               </NavLink>
             );
           })}
-        </div>
+        </nav>
 
         {/* Bottom Connected Status Card */}
         <div className="p-3 border-t border-border">
