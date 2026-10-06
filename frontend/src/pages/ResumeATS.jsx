@@ -4,7 +4,8 @@ import axios from 'axios';
 import {
   UploadCloud, FileText, CheckCircle2, AlertTriangle, AlertCircle,
   Loader2, Zap, X, ChevronRight, Briefcase, GraduationCap,
-  ExternalLink, Github, Linkedin, Sparkles, RefreshCw, Info, ArrowRight
+  ExternalLink, Github, Linkedin, Sparkles, RefreshCw, Info, ArrowRight,
+  Sliders, Download
 } from 'lucide-react';
 
 import {
@@ -14,8 +15,10 @@ import {
   deleteResumeFromDB,
 } from '../services/api';
 
+import ResumeSectionEditor from '../components/ResumeSectionEditor';
+
 export default function ResumeATS() {
-  const [activeTab, setActiveTab] = useState('resume'); // 'resume' | 'linkedin'
+  const [activeTab, setActiveTab] = useState('resume'); // 'resume' | 'editor' | 'linkedin'
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [parsedData, setParsedData] = useState(null);
@@ -172,12 +175,12 @@ export default function ResumeATS() {
             Resume & ATS Intelligence
           </h1>
           <p className="text-text-body text-sm mt-1">
-            Deterministic ATS parser, severity-grouped suggestions, and embedded LinkedIn profile review.
+            Deterministic ATS parser, severity-grouped suggestions, interactive section editor, and ATS PDF export.
           </p>
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-1 bg-surface p-1 rounded-xl border border-border self-start">
+        <div className="flex items-center gap-1 bg-surface p-1 rounded-xl border border-border self-start flex-wrap">
           <button
             onClick={() => setActiveTab('resume')}
             className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -187,6 +190,18 @@ export default function ResumeATS() {
             }`}
           >
             Resume ATS Analysis
+          </button>
+          <button
+            id="tab-interactive-ats"
+            onClick={() => setActiveTab('editor')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'editor'
+                ? 'bg-white text-primary shadow-xs'
+                : 'text-text-body hover:text-text-dark'
+            }`}
+          >
+            <Sliders className="h-3.5 w-3.5 text-primary" />
+            <span>Interactive ATS Template & PDF</span>
           </button>
           <button
             onClick={() => setActiveTab('linkedin')}
@@ -367,7 +382,15 @@ export default function ResumeATS() {
                   </div>
                 )}
 
-                <div className="pt-2">
+                <div className="pt-2 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('editor')}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-accent hover:underline text-left"
+                  >
+                    <Sliders className="h-3.5 w-3.5" />
+                    <span>Customize Hierarchy & Export PDF</span>
+                  </button>
                   <Link
                     to="/codebase"
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
@@ -551,8 +574,16 @@ export default function ResumeATS() {
           </div>
         </div>
       )}
+ 
+      {/* Tab 2: Interactive Resume Section Editor & ATS PDF Export */}
+      {activeTab === 'editor' && (
+        <ResumeSectionEditor
+          parsedData={parsedData}
+          onUpdateData={(updated) => setParsedData(updated)}
+        />
+      )}
 
-      {/* 4. Tab 2: Secondary LinkedIn Review (Folded into ResumeATS per spec) */}
+      {/* 4. Tab 3: Secondary LinkedIn Review (Folded into ResumeATS per spec) */}
       {activeTab === 'linkedin' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-6 bg-surface rounded-card border border-border p-6 shadow-2xs space-y-4">
