@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Dict, Any, List, Optional
+from typing import Callable, Dict, Any, List, Optional
 from app.services import llm_service
 
 
@@ -67,15 +67,27 @@ def _finalize(result: Dict[str, Any], pacing_scores: List[int], pacing_notes: Li
         result["pacing_score"] = None
     return result
 
-
 def evaluate_interview_session(
     responses: List[Dict[str, Any]],
-    role: str = "Full-Stack Software Engineer"
+    role: str = "Full-Stack Software Engineer",
+    progress: Optional[Callable[[str], None]] = None
 ) -> Dict[str, Any]:
     """
     Evaluates candidate mock interview responses using Gemini with Groq fallback.
     Returns structured scoring, category breakdown, positive feedback, and areas to polish.
+
+    `progress` is an optional phase callback used by the SSE endpoint. It reports
+    only phases that actually happen: the evaluation is a single model call, so
+    there is no per-question work to stream and pretending otherwise would show
+    the candidate a fake progress bar.
     """
+    def report(message: str) -> None:
+        if progress is not None:
+            try:
+                progress(message)
+            except Exception as p_err:  # progress must never break evaluation
+                print(f"[Interview AI] progress callback ignored: {p_err}")
+
     if not responses:
         return {
             "overall_score": 0,

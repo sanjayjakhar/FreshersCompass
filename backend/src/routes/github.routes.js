@@ -5,6 +5,7 @@ import {
   analyzeRepositoryAsync,
   getIndexStatus,
   chatWithCodebase,
+  chatWithCodebaseStream,
   getRecruiterPitch,
   getInterviewPrep,
   getUserRepositories,
@@ -18,6 +19,7 @@ router.post("/analyze", aiInferenceLimiter, analyzeRepository);
 router.post("/analyze-async", aiInferenceLimiter, analyzeRepositoryAsync);
 router.get("/index-status/:jobId", getIndexStatus);
 router.post("/chat", aiInferenceLimiter, chatWithCodebase);
+router.post("/chat/stream", aiInferenceLimiter, chatWithCodebaseStream);
 router.post("/pitch", getRecruiterPitch);
 router.post("/interview-prep", getInterviewPrep);
 router.get("/user/:username/repos", getUserRepositories);

@@ -140,15 +140,35 @@ def execute_codebase_llm(prompt: str) -> Tuple[str, str]:
     """
     return llm_service.complete(prompt, temperature=0.2, timeout=12)
 
-def answer_codebase_question(
-    repo_full_name: str, 
-    question: str, 
-    meta: Dict[str, Any],
-    history: Optional[List[Dict[str, str]]] = None
-) -> Dict[str, Any]:
-    """Uses RAG retrieval + LLM (Gemini/Groq) to answer questions grounded in the repository code."""
-    relevant_chunks = retrieve_relevant_chunks(repo_full_name, question, top_k=5)
+def retrieve_codebase_context(repo_full_name: str, question: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    """Vector + heuristic retrieval, shared by the buffered and streaming chat paths."""
+    return retrieve_relevant_chunks(repo_full_name, question, top_k=top_k)
 
+
+def build_citations(relevant_chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "file": c["file_path"],
+            "lines": f"{c['start_line']}-{c['end_line']}",
+            "score": c["score"],
+            "snippet": c["content"][:200] + "..." if len(c["content"]) > 200 else c["content"]
+        }
+        for c in relevant_chunks
+    ]
+
+
+def build_codebase_prompt(
+    repo_full_name: str,
+    question: str,
+    meta: Dict[str, Any],
+    history: Optional[List[Dict[str, str]]],
+    relevant_chunks: List[Dict[str, Any]]
+) -> str:
+    """Single source of truth for the chat prompt.
+
+    The streaming endpoint must ask the model exactly what the buffered one
+    asks, otherwise streamed and non-streamed answers would disagree.
+    """
     # Format context snippets with file paths, line numbers, and code content
     context_blocks = []
     for idx, c in enumerate(relevant_chunks, 1):
@@ -164,7 +184,7 @@ def answer_codebase_question(
             role = "Developer" if turn.get("role") == "user" else "Assistant"
             history_str += f"{role}: {turn.get('content', '')}\n"
 
-    system_prompt = f"""You are an expert technical AI Codebase Assistant analyzing the repository '{meta.get('full_name', repo_full_name)}'.
+    return f"""You are an expert technical AI Codebase Assistant analyzing the repository '{meta.get('full_name', repo_full_name)}'.
 
 === REPOSITORY OVERVIEW ===
 Repository: {meta.get('full_name', repo_full_name)}
@@ -194,6 +214,8 @@ Primary Language: {meta.get('primary_language', 'Unknown')}
 6. Format your answer cleanly using markdown (bullet points, bold text, code blocks).
 """
 
+
+def log_codebase_prompt(repo_full_name: str, question: str, system_prompt: str, relevant_chunks: List[Dict[str, Any]]) -> None:
     # REQUIREMENT 6: Explicit console/server log at the point where final prompt is sent to the LLM
     print("\n" + "=" * 80)
     print(f"[RAG Q&A PROMPT LOG]")
@@ -205,6 +227,17 @@ Primary Language: {meta.get('primary_language', 'Unknown')}
     print("-" * 80)
     print(f"Full Prompt sent to LLM:\n{system_prompt}")
     print("=" * 80 + "\n")
+
+def answer_codebase_question(
+    repo_full_name: str,
+    question: str,
+    meta: Dict[str, Any],
+    history: Optional[List[Dict[str, str]]] = None
+) -> Dict[str, Any]:
+    """Uses RAG retrieval + LLM (Gemini/Groq) to answer questions grounded in the repository code."""
+    relevant_chunks = retrieve_codebase_context(repo_full_name, question, top_k=5)
+    system_prompt = build_codebase_prompt(repo_full_name, question, meta, history, relevant_chunks)
+    log_codebase_prompt(repo_full_name, question, system_prompt, relevant_chunks)
 
     # Call LLM through the circuit breaker; on outage answer from the retrieved
     # code instead, so chat stays useful offline and says so.
@@ -218,20 +251,9 @@ Primary Language: {meta.get('primary_language', 'Unknown')}
         answer_text = offline_heuristics.chat_answer(question, relevant_chunks, repo_full_name)
         print(f"[RAG Q&A] Offline fallback engaged: {unavailable}\n")
 
-    # Citations list
-    citations = [
-        {
-            "file": c["file_path"],
-            "lines": f"{c['start_line']}-{c['end_line']}",
-            "score": c["score"],
-            "snippet": c["content"][:200] + "..." if len(c["content"]) > 200 else c["content"]
-        }
-        for c in relevant_chunks
-    ]
-
     return {
         "answer": answer_text,
-        "citations": citations,
+        "citations": build_citations(relevant_chunks),
         "model_used": model_used,
         "offline_mode": offline
     }

@@ -108,6 +108,54 @@ export const chatWithCodebase = async (req, res) => {
   }
 };
 
+export const chatWithCodebaseStream = async (req, res) => {
+  try {
+    const { repo_url, question, history } = req.body;
+
+    if (!repo_url || !question) {
+      return res.status(400).json({
+        message: "Repository URL and question are both required.",
+      });
+    }
+
+    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+
+    const response = await axios.post(
+      `${aiServiceUrl}/github/chat/stream`,
+      { repo_url, question, history: history || [] },
+      {
+        headers: getAiServiceHeaders(),
+        responseType: "stream",
+        timeout: 60000,
+      }
+    );
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    response.data.pipe(res);
+
+    req.on("close", () => {
+      if (response.data && typeof response.data.destroy === "function") {
+        response.data.destroy();
+      }
+    });
+  } catch (error) {
+    console.error("Error streaming codebase chat:", error.response?.data || error.message);
+    if (!res.headersSent) {
+      const statusCode = error.response?.status || 500;
+      return res.status(statusCode).json({
+        message: "Failed to stream codebase response",
+        details: error.response?.data?.detail || error.message,
+      });
+    } else {
+      res.end();
+    }
+  }
+};
+
 export const getRecruiterPitch = async (req, res) => {
   try {
     const { repo_url } = req.body;
