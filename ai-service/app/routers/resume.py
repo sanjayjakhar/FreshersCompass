@@ -15,7 +15,13 @@ async def parse_resume(
     if x_internal_key != expected_key:
         raise HTTPException(status_code=403, detail="Unauthorized inter-service request")
 
-    if not file.filename.endswith(('.pdf', '.docx')):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="A filename is required")
+
+    # str.endswith is case-sensitive, so Resume.PDF / CV.DOCX (common on mobile
+    # scanner apps and Windows-authored resumes) were rejected as unsupported
+    # even though the payload was a perfectly valid document.
+    if not file.filename.lower().endswith(('.pdf', '.docx')):
         raise HTTPException(status_code=400, detail="Only PDF and DOCX are supported")
 
     try:
