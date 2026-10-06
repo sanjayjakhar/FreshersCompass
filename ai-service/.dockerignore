@@ -1,0 +1,30 @@
+# Keep the build context minimal and hermetic.
+#
+# ai-service/venv is a local virtualenv full of Windows binaries. Copying it into
+# the image shadows the Linux site-packages installed by pip and breaks the
+# service on import.
+
+venv
+.venv
+env
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Secrets must never enter an image layer.
+.env
+.env.*
+!.env.example
+
+# Docs and VCS metadata.
+Dockerfile
+.dockerignore
+.git
+.gitignore
+.vscode
+.idea
+*.md
+*.log
