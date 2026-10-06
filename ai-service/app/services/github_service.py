@@ -47,7 +47,7 @@ def get_github_client() -> Github:
         return Github(token, retry=0, timeout=10)
     return Github(retry=0, timeout=10)
 
-def fetch_local_repository_data(owner: str, repo_name: str, max_files_to_read: int = 150) -> Dict[str, Any]:
+def fetch_local_repository_data(owner: str, repo_name: str, max_files_to_read: int = 150, branch: Optional[str] = None) -> Dict[str, Any]:
     """Ingests local project workspace directly from disk (fast, offline, zero rate limit)."""
     # Find repository root
     current_dir = os.path.abspath(os.path.dirname(__file__))
@@ -63,6 +63,7 @@ def fetch_local_repository_data(owner: str, repo_name: str, max_files_to_read: i
         "forks": 3,
         "open_issues": 0,
         "default_branch": "main",
+        "selected_branch": branch or "main",
         "primary_language": "JavaScript / Python",
         "created_at": "2026-09-07",
         "updated_at": "2026-09-12",
@@ -114,7 +115,7 @@ def fetch_local_repository_data(owner: str, repo_name: str, max_files_to_read: i
         "health": health_analysis,
     }
 
-def fetch_repository_data(repo_input: str, max_files_to_read: int = 35) -> Dict[str, Any]:
+def fetch_repository_data(repo_input: str, max_files_to_read: int = 35, branch: Optional[str] = None) -> Dict[str, Any]:
     """
     Ingests repo metadata, directory tree, and key source files.
     Works with local workspace fallback, public GitHub repos, and authenticated private repos.
@@ -123,7 +124,7 @@ def fetch_repository_data(repo_input: str, max_files_to_read: int = 35) -> Dict[
 
     # If it's the current project, ingest directly from disk for instant speed
     if repo_name.lower() in ("fresherscompass", "freshercompass", "freshers-compass"):
-        return fetch_local_repository_data(owner, repo_name, max(max_files_to_read, 150))
+        return fetch_local_repository_data(owner, repo_name, max(max_files_to_read, 150), branch=branch)
 
     g = get_github_client()
     
@@ -138,6 +139,8 @@ def fetch_repository_data(repo_input: str, max_files_to_read: int = 35) -> Dict[
     except Exception as ex:
         raise ValueError(f"Failed to connect to GitHub: {str(ex)}")
 
+    target_branch = branch or repo.default_branch or "main"
+
     meta = {
         "full_name": repo.full_name,
         "name": repo.name,
@@ -147,6 +150,7 @@ def fetch_repository_data(repo_input: str, max_files_to_read: int = 35) -> Dict[
         "forks": repo.forks_count,
         "open_issues": repo.open_issues_count,
         "default_branch": repo.default_branch or "main",
+        "selected_branch": target_branch,
         "primary_language": repo.language or "Unknown",
         "created_at": str(repo.created_at),
         "updated_at": str(repo.updated_at),
@@ -156,7 +160,7 @@ def fetch_repository_data(repo_input: str, max_files_to_read: int = 35) -> Dict[
     # Fetch recursive git tree
     file_list: List[str] = []
     try:
-        tree = repo.get_git_tree(repo.default_branch, recursive=True)
+        tree = repo.get_git_tree(target_branch, recursive=True)
         for element in tree.tree:
             if element.type == "blob":
                 path_parts = element.path.split("/")
@@ -169,12 +173,12 @@ def fetch_repository_data(repo_input: str, max_files_to_read: int = 35) -> Dict[
     except Exception as e:
         print(f"Recursive tree fetch fallback: {e}")
         try:
-            contents = repo.get_contents("")
+            contents = repo.get_contents("", ref=target_branch)
             while contents and len(file_list) < 100:
                 file_content = contents.pop(0)
                 if file_content.type == "dir":
                     if file_content.name not in IGNORE_DIRS:
-                        contents.extend(repo.get_contents(file_content.path))
+                        contents.extend(repo.get_contents(file_content.path, ref=target_branch))
                 else:
                     file_list.append(file_content.path)
         except Exception as e2:
@@ -205,7 +209,7 @@ def fetch_repository_data(repo_input: str, max_files_to_read: int = 35) -> Dict[
     file_contents: Dict[str, str] = {}
     for path in prioritized_paths:
         try:
-            c = repo.get_contents(path)
+            c = repo.get_contents(path, ref=target_branch)
             if c.encoding == "base64" and c.content:
                 decoded = base64.b64decode(c.content).decode("utf-8", errors="replace")
                 file_contents[path] = decoded

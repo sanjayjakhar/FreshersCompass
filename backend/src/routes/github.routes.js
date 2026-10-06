@@ -9,6 +9,8 @@ import {
   getRecruiterPitch,
   getInterviewPrep,
   getUserRepositories,
+  getRepositoryBranches,
+  getRepositoryCommits,
   generateProfileReadme,
   generateProjectReadme,
 } from "../controllers/github.controller.js";
@@ -18,6 +20,8 @@ const router = express.Router();
 router.post("/analyze", aiInferenceLimiter, analyzeRepository);
 router.post("/analyze-async", aiInferenceLimiter, analyzeRepositoryAsync);
 router.get("/index-status/:jobId", getIndexStatus);
+router.get("/branches", getRepositoryBranches);
+router.get("/commits", getRepositoryCommits);
 router.post("/chat", aiInferenceLimiter, chatWithCodebase);
 router.post("/chat/stream", aiInferenceLimiter, chatWithCodebaseStream);
 router.post("/pitch", getRecruiterPitch);
